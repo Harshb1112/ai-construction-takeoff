@@ -44,6 +44,10 @@ CLEAN_DIR  = BASE / "Dataset" / "WITHOUT MARKUP"
 SAVE_DIR   = BASE / "model_output"
 CKPT       = SAVE_DIR / "floor_plan_model.pth"
 HIST_FILE  = SAVE_DIR / "retrain_history.json"
+
+# Google Drive auto-backup (Colab pe kaam karta hai)
+_DRIVE_BACKUP = Path("/content/drive/MyDrive/models/model_output")
+DRIVE_BACKUP  = _DRIVE_BACKUP if _DRIVE_BACKUP.parent.parent.exists() else None
 LOG_FILE   = BASE.parent / "logs" / "training.log"
 
 SAVE_DIR.mkdir(exist_ok=True)
@@ -1088,7 +1092,16 @@ def main():
                 "arch": "BIMBOSS-ResNet34-UNet-v3.2", "img_size": IMG_SIZE,
                 "n_classes": N_CLASSES, "class_names": CLASS_NAMES, "iou_per_cls": v_iou,
             }, str(CKPT))
-            saved = "  ✓"
+            # Auto-backup to Google Drive (Colab disconnect se bachao)
+            if DRIVE_BACKUP is not None:
+                try:
+                    import shutil
+                    DRIVE_BACKUP.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(str(CKPT), str(DRIVE_BACKUP / "floor_plan_model.pth"))
+                    shutil.copy(str(HIST_FILE), str(DRIVE_BACKUP / "retrain_history.json")) if HIST_FILE.exists() else None
+                except Exception:
+                    pass
+            saved = "  ✓ (Drive backup)"
         else:
             no_improve += 1
 
