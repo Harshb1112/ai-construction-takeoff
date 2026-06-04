@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# model files (too large for GitHub)
+*.pth
+models/model_output/
+models/dataset/
+pytorch_wheels/
+pytorch_wheels_old/
+
+# temp files
+*.pyc
+__pycache__/
