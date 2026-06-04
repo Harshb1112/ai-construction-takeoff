@@ -1,0 +1,289 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── User & Auth ─────────────────────────────────────────────
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  name      String?
+  password  String?
+  createdAt DateTime  @default(now())
+  projects  Project[]
+}
+
+// ─── Projects ────────────────────────────────────────────────
+model Project {
+  id            String          @id @default(cuid())
+  fastapiId     Int?            @unique
+  name          String
+  description   String?
+  address       String?
+  status        ProjectStatus   @default(ACTIVE)
+  costRegion    String          @default("us_national")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  owner         User            @relation(fields: [ownerId], references: [id])
+  ownerId       String
+  drawings      Drawing[]
+  takeoffItems  TakeoffItem[]
+  boqItems      BoqItem[]
+  scheduleTasks ScheduleTask[]
+  punchItems    PunchItem[]
+  risks         Risk[]
+  requirements  Requirement[]
+  assemblies    Assembly[]
+  knowledgeDocs KnowledgeDoc[]
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+// ─── Drawings ────────────────────────────────────────────────
+model Drawing {
+  id            String        @id @default(cuid())
+  fastapiId     Int?          @unique
+  projectId     String
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  filename      String
+  originalName  String
+  fileUrl       String
+  fileFormat    FileFormat
+  fileSizeBytes Int
+  pageCount     Int?
+  uploadedAt    DateTime      @default(now())
+  annotations   Annotation[]
+  scale         DrawingScale?
+  takeoffItems  TakeoffItem[]
+}
+
+enum FileFormat {
+  DWG
+  DXF
+  PDF
+  PNG
+  JPG
+  JPEG
+  IFC
+}
+
+model DrawingScale {
+  id           String   @id @default(cuid())
+  drawingId    String   @unique
+  drawing      Drawing  @relation(fields: [drawingId], references: [id])
+  notation     String?
+  pxPerUnit    Float?
+  realUnit     String   @default("ft")
+  scaleRatio   Float?
+  calibratedBy String   @default("manual")
+  updatedAt    DateTime @updatedAt
+}
+
+// ─── Annotations ─────────────────────────────────────────────
+model Annotation {
+  id            String         @id @default(cuid())
+  drawingId     String
+  drawing       Drawing        @relation(fields: [drawingId], references: [id], onDelete: Cascade)
+  pageNumber    Int            @default(1)
+  type          AnnotationType
+  geometry      Json
+  measurement   Float?
+  unit          String?
+  label         String?
+  userNote      String?
+  color         String         @default("#ef4444")
+  opacity       Float          @default(0.7)
+  takeoffItemId String?
+  aiAnalyzed    Boolean        @default(false)
+  aiResult      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  createdBy     String?
+}
+
+enum AnnotationType {
+  MEASUREMENT
+  AREA
+  COUNT
+  PERIMETER
+  TEXT
+}
+
+// ─── Takeoff Items ───────────────────────────────────────────
+model TakeoffItem {
+  id           String        @id @default(cuid())
+  projectId    String
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  drawingId    String?
+  drawing      Drawing?      @relation(fields: [drawingId], references: [id])
+  annotationId String?
+  source       TakeoffSource
+  category     String
+  subcategory  String?
+  description  String
+  quantity     Float
+  unit         String
+  unitCost     Float?
+  totalCost    Float?
+  wastePercent Float         @default(0)
+  aiProvider   String?
+  confidence   Float?
+  notes        String?
+  metadata     Json?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+enum TakeoffSource {
+  MANUAL
+  AI_CLAUDE
+  AI_OPENAI
+  AI_GROQ
+  AI_LMSTUDIO
+  FASTAPI
+  MARKUP
+}
+
+// ─── BOQ ─────────────────────────────────────────────────────
+model BoqItem {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  section     String
+  csiCode     String?
+  description String
+  unit        String
+  quantity    Float
+  unitCost    Float
+  totalCost   Float
+  notes       String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Schedule Tasks ──────────────────────────────────────────
+model ScheduleTask {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  startDate   String
+  endDate     String
+  progress    Int      @default(0)
+  phase       String   @default("Foundation")
+  color       String   @default("#2563eb")
+  budget      Float    @default(0)
+  actualCost  Float    @default(0)
+  assignedTo  String?
+  predecessor String?
+  depType     String   @default("FS")
+  lag         Int      @default(0)
+  critical    Boolean  @default(false)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Punch List Items ────────────────────────────────────────
+model PunchItem {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  status      String   @default("OPEN")
+  priority    String   @default("MEDIUM")
+  category    String   @default("General")
+  location    String?
+  assignedTo  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Risk Register ───────────────────────────────────────────
+model Risk {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  category    String   @default("Technical")
+  probability Int      @default(3)
+  impact      Int      @default(3)
+  score       Int      @default(9)
+  mitigation  String   @default("")
+  owner       String?
+  contingency Float?
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── EAC Requirements ────────────────────────────────────────
+model Requirement {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  entity     String
+  attribute  String
+  constraint String
+  category   String   @default("Structural")
+  boqRef     String?
+  status     String   @default("OPEN")
+  gate       String   @default("completeness")
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// ─── Assemblies ───────────────────────────────────────────────
+model Assembly {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  category    String   @default("General")
+  description String?
+  parameters  Json     @default("[]")
+  components  Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Knowledge Base ───────────────────────────────────────────
+model KnowledgeDoc {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name       String
+  type       String   @default("pdf")
+  content    String   @default("")
+  chunks     Int      @default(1)
+  summary    String?
+  createdAt  DateTime @default(now())
+}
+
+// ─── Cost Database ───────────────────────────────────────────
+model CostItem {
+  id           String @id @default(cuid())
+  csiCode      String
+  description  String
+  unit         String
+  region       String @default("national")
+  laborCost    Float
+  materialCost Float
+  totalCost    Float
+  year         Int    @default(2025)
+  source       String @default("RSMeans")
+
+  @@unique([csiCode, region, year])
+}

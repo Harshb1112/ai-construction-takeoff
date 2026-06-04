@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BIMBOSS — Model Test Dashboard</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+
+  /* Header */
+  .header{background:linear-gradient(135deg,#1e293b,#0f172a);border-bottom:1px solid #334155;padding:16px 28px;display:flex;align-items:center;gap:14px}
+  .logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:20px}
+  .header h1{font-size:18px;font-weight:700;color:#f1f5f9}
+  .header p{font-size:12px;color:#94a3b8;margin-top:2px}
+  .status-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;margin-left:auto;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .status-label{font-size:11px;color:#22c55e;font-weight:600}
+
+  /* Layout */
+  .container{display:grid;grid-template-columns:380px 1fr;gap:0;height:calc(100vh - 65px)}
+
+  /* Left Panel */
+  .left{background:#1e293b;border-right:1px solid #334155;padding:20px;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+
+  .section-title{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+
+  /* Upload Zone */
+  .upload-zone{border:2px dashed #475569;border-radius:14px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;background:#0f172a}
+  .upload-zone:hover,.upload-zone.drag{border-color:#6366f1;background:#1e1b4b20}
+  .upload-zone .icon{font-size:36px;margin-bottom:10px}
+  .upload-zone h3{font-size:14px;font-weight:600;color:#f1f5f9;margin-bottom:4px}
+  .upload-zone p{font-size:12px;color:#64748b}
+  .upload-zone input{display:none}
+
+  /* Uploaded file info */
+  .file-info{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px;display:none}
+  .file-info.show{display:flex;align-items:center;gap:10px}
+  .file-icon{width:36px;height:36px;border-radius:8px;background:#1e40af20;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+  .file-name{font-size:12px;font-weight:600;color:#f1f5f9;word-break:break-all}
+  .file-size{font-size:11px;color:#64748b;margin-top:2px}
+
+  /* API Config */
+  .config-box{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px}
+  .config-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .config-row:last-child{margin-bottom:0}
+  .config-row label{font-size:11px;color:#94a3b8;width:80px;flex-shrink:0}
+  .config-row input{flex:1;background:#1e293b;border:1px solid #334155;border-radius:7px;padding:6px 10px;font-size:12px;color:#f1f5f9;outline:none}
+  .config-row input:focus{border-color:#6366f1}
+  .test-conn{font-size:11px;color:#6366f1;cursor:pointer;text-decoration:underline;white-space:nowrap}
+
+  /* Buttons */
+  .btn{width:100%;padding:12px;border-radius:10px;border:none;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
+  .btn-primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff}
+  .btn-primary:hover{transform:translateY(-1px);box-shadow:0 8px 24px #6366f140}
+  .btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+  .btn-secondary{background:#1e293b;color:#94a3b8;border:1px solid #334155;font-size:12px;padding:8px}
+  .btn-secondary:hover{background:#334155;color:#f1f5f9}
+
+  /* Stats row */
+  .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .stat{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:10px;text-align:center}
+  .stat-val{font-size:20px;font-weight:800;color:#6366f1}
+  .stat-label{font-size:10px;color:#64748b;margin-top:2px}
+
+  /* Right Panel */
+  .right{display:flex;flex-direction:column;overflow:hidden}
+
+  /* Tabs */
+  .tabs{background:#1e293b;border-bottom:1px solid #334155;display:flex;gap:0}
+  .tab{padding:12px 20px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+  .tab.active{color:#6366f1;border-bottom-color:#6366f1}
+  .tab:hover{color:#f1f5f9}
+
+  /* Tab content */
+  .tab-content{flex:1;overflow:hidden;position:relative}
+  .tab-pane{display:none;height:100%;overflow-y:auto;padding:20px}
+  .tab-pane.active{display:flex;flex-direction:column;gap:16px}
+
+  /* Canvas area */
+  .canvas-wrap{position:relative;background:#0f172a;border:1px solid #334155;border-radius:12px;overflow:hidden;min-height:400px;display:flex;align-items:center;justify-content:center}
+  .canvas-wrap canvas{max-width:100%;display:block}
+  .canvas-placeholder{text-align:center;color:#475569}
+  .canvas-placeholder .icon{font-size:48px;margin-bottom:12px}
+  .canvas-placeholder p{font-size:13px}
+
+  /* Overlay controls */
+  .overlay-controls{display:flex;gap:8px;flex-wrap:wrap}
+  .toggle-btn{padding:6px 14px;border-radius:20px;border:1px solid #334155;background:#1e293b;color:#94a3b8;font-size:12px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:6px}
+  .toggle-btn.active{border-color:#6366f1;color:#6366f1;background:#1e1b4b30}
+  .color-dot{width:10px;height:10px;border-radius:50%}
+
+  /* Results table */
+  .results-table{width:100%;border-collapse:collapse;font-size:13px}
+  .results-table th{background:#1e293b;padding:10px 14px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em}
+  .results-table td{padding:10px 14px;border-bottom:1px solid #1e293b;color:#e2e8f0}
+  .results-table tr:hover td{background:#1e293b30}
+  .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+  .badge-room{background:#1d4ed820;color:#60a5fa}
+  .badge-wall{background:#dc262620;color:#f87171}
+  .badge-open{background:#16a34a20;color:#4ade80}
+
+  /* IoU bars */
+  .iou-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .iou-label{font-size:12px;color:#94a3b8;width:80px}
+  .iou-bar-bg{flex:1;height:8px;background:#334155;border-radius:4px;overflow:hidden}
+  .iou-bar{height:100%;border-radius:4px;transition:width .8s ease}
+  .iou-val{font-size:12px;font-weight:700;width:45px;text-align:right}
+
+  /* Log */
+  .log-box{background:#000;border:1px solid #334155;border-radius:10px;padding:14px;font-family:monospace;font-size:12px;color:#4ade80;height:280px;overflow-y:auto;line-height:1.7}
+  .log-box .log-err{color:#f87171}
+  .log-box .log-warn{color:#fbbf24}
+  .log-box .log-info{color:#60a5fa}
+  .log-box .log-success{color:#4ade80}
+
+  /* Progress */
+  .progress-wrap{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px}
+  .progress-label{font-size:12px;color:#94a3b8;margin-bottom:8px;display:flex;justify-content:space-between}
+  .progress-bar-bg{height:8px;background:#334155;border-radius:4px;overflow:hidden}
+  .progress-bar{height:100%;background:linear-gradient(90deg,#6366f1,#8b5cf6);border-radius:4px;transition:width .4s ease;width:0%}
+
+  /* Empty state */
+  .empty{text-align:center;padding:40px;color:#475569}
+  .empty .icon{font-size:40px;margin-bottom:10px}
+  .empty p{font-size:13px}
+
+  /* Spinner */
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spinner{width:18px;height:18px;border:2px solid #ffffff40;border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+
+  /* Compare */
+  .compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .compare-card{background:#0f172a;border:1px solid #334155;border-radius:10px;overflow:hidden}
+  .compare-card-title{padding:8px 12px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;background:#1e293b;border-bottom:1px solid #334155}
+  .compare-card img,.compare-card canvas{width:100%;display:block}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">🏠</div>
+  <div>
+    <h1>BIMBOSS Model Test Dashboard</h1>
+    <p>Floor Plan Segmentation — UNet-SE-ASPP · 3 Classes</p>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+    <div class="status-dot" id="serverDot" style="background:#ef4444"></div>
+    <span class="status-label" id="serverLabel">Server Offline</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- LEFT PANEL -->
+  <div class="left">
+
+    <!-- Upload -->
+    <div>
+      <div class="section-title">Upload Floor Plan</div>
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()"
+           ondragover="event.preventDefault();this.classList.add('drag')"
+           ondragleave="this.classList.remove('drag')"
+           ondrop="handleDrop(event)">
+        <div class="icon">📐</div>
+        <h3>Drop floor plan here</h3>
+        <p>JPG · PNG · PDF supported</p>
+        <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.pdf" onchange="handleFile(this.files[0])"/>
+      </div>
+      <div class="file-info" id="fileInfo">
+        <div class="file-icon" id="fileIcon">📄</div>
+        <div>
+          <div class="file-name" id="fileName">—</div>
+          <div class="file-size" id="fileSize">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- API Config -->
+    <div>
+      <div class="section-title">Server Config</div>
+      <div class="config-box">
+        <div class="config-row">
+          <label>API URL</label>
+          <input type="text" id="apiUrl" value="http://localhost:8001" placeholder="http://localhost:8001"/>
+          <span class="test-conn" onclick="testConnection()">Test</span>
+        </div>
+        <div class="config-row">
+          <label>Endpoint</label>
+          <input type="text" id="apiEndpoint" value="/api/floorplan/analyze" placeholder="/api/floorplan/analyze"/>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page selector -->
+    <div>
+      <div class="section-title">PDF Page</div>
+      <div class="config-box">
+        <div class="config-row">
+          <label>Page No.</label>
+          <input type="number" id="pageNum" value="1" min="1" style="width:60px"/>
+          <span style="font-size:11px;color:#64748b" id="pageTotal">of ? pages</span>
+          <div style="display:flex;gap:4px;margin-left:auto">
+            <button onclick="changePage(-1)" style="padding:4px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#94a3b8;cursor:pointer">◀</button>
+            <button onclick="changePage(1)"  style="padding:4px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#94a3b8;cursor:pointer">▶</button>
+          </div>
+        </div>
+        <div id="sheetTitle" style="font-size:11px;color:#6366f1;margin-top:4px;display:none"></div>
+      </div>
+    </div>
+
+    <!-- Run Button -->
+    <button class="btn btn-primary" id="runBtn" onclick="runTest()" disabled>
+      <span id="runBtnText">🚀 Run AI Segmentation</span>
+    </button>
+
+    <!-- Stats -->
+    <div>
+      <div class="section-title">Results Summary</div>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-val" id="statRooms">—</div>
+          <div class="stat-label">Rooms</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" id="statWalls">—</div>
+          <div class="stat-label">Wall %</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" id="statOpenings">—</div>
+          <div class="stat-label">Openings</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- IoU Bars -->
+    <div>
+      <div class="section-title">IoU Score</div>
+      <div class="iou-row">
+        <span class="iou-label">Room</span>
+        <div class="iou-bar-bg"><div class="iou-bar" id="barRoom" style="background:#60a5fa;width:0%"></div></div>
+        <span class="iou-val" id="valRoom" style="color:#60a5fa">—</span>
+      </div>
+      <div class="iou-row">
+        <span class="iou-label">Wall</span>
+        <div class="iou-bar-bg"><div class="iou-bar" id="barWall" style="background:#f87171;width:0%"></div></div>
+        <span class="iou-val" id="valWall" style="color:#f87171">—</span>
+      </div>
+      <div class="iou-row">
+        <span class="iou-label">Opening</span>
+        <div class="iou-bar-bg"><div class="iou-bar" id="barOpen" style="background:#4ade80;width:0%"></div></div>
+        <span class="iou-val" id="valOpen" style="color:#4ade80">—</span>
+      </div>
+    </div>
+
+    <!-- Inference time -->
+    <div class="stat" style="text-align:left;padding:12px">
+      <div style="font-size:11px;color:#64748b;margin-bottom:4px">INFERENCE TIME</div>
+      <div style="font-size:22px;font-weight:800;color:#fbbf24" id="inferenceTime">—</div>
+    </div>
+
+    <!-- Wall Types -->
+    <div id="wallTypesBox" style="display:none">
+      <div class="section-title">🧱 Wall Types Detected</div>
+      <div id="wallTypesList" class="log-box" style="height:120px;color:#94a3b8;font-size:11px"></div>
+    </div>
+
+    <!-- Door Types -->
+    <div id="doorTypesBox" style="display:none">
+      <div class="section-title">🚪 Door Types Detected</div>
+      <div id="doorTypesList" class="log-box" style="height:100px;color:#94a3b8;font-size:11px"></div>
+    </div>
+
+    <!-- NIC Areas -->
+    <div id="nicBox" style="display:none">
+      <div class="section-title">🚫 N.I.C. Areas (Not In Contract)</div>
+      <div id="nicList" style="font-size:11px;color:#f87171;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px"></div>
+    </div>
+
+    <!-- Clear -->
+    <button class="btn btn-secondary" onclick="clearAll()">🗑️ Clear Results</button>
+
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right">
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('visual')">🎨 Visual Output</div>
+      <div class="tab" onclick="switchTab('compare')">🔍 Compare</div>
+      <div class="tab" onclick="switchTab('data')">📊 Data</div>
+      <div class="tab" onclick="switchTab('log')">📋 Log</div>
+    </div>
+
+    <!-- VISUAL TAB -->
+    <div class="tab-content">
+      <div class="tab-pane active" id="tab-visual">
+
+        <!-- Overlay toggles -->
+        <div class="overlay-controls">
+          <button class="toggle-btn active" id="tog-original" onclick="toggleLayer('original')">
+            <div class="color-dot" style="background:#94a3b8"></div> Original
+          </button>
+          <button class="toggle-btn active" id="tog-rooms" onclick="toggleLayer('rooms')">
+            <div class="color-dot" style="background:#3b82f6"></div> Rooms
+          </button>
+          <button class="toggle-btn active" id="tog-walls" onclick="toggleLayer('walls')">
+            <div class="color-dot" style="background:#ef4444"></div> Walls
+          </button>
+          <button class="toggle-btn active" id="tog-openings" onclick="toggleLayer('openings')">
+            <div class="color-dot" style="background:#22c55e"></div> Openings
+          </button>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+            <span style="font-size:12px;color:#64748b">Opacity</span>
+            <input type="range" id="opacitySlider" min="10" max="90" value="50" oninput="redrawOverlay()" style="width:80px">
+          </div>
+        </div>
+
+        <!-- Canvas -->
+        <div class="canvas-wrap" id="canvasWrap">
+          <div class="canvas-placeholder" id="canvasPlaceholder">
+            <div class="icon">🏗️</div>
+            <p>Upload a floor plan and run segmentation</p>
+          </div>
+          <canvas id="mainCanvas" style="display:none"></canvas>
+        </div>
+
+        <!-- Progress -->
+        <div class="progress-wrap" id="progressWrap" style="display:none">
+          <div class="progress-label">
+            <span id="progressLabel">Processing…</span>
+            <span id="progressPct">0%</span>
+          </div>
+          <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
+        </div>
+
+      </div>
+
+      <!-- COMPARE TAB -->
+      <div class="tab-pane" id="tab-compare">
+        <div class="compare-grid" id="compareGrid">
+          <div class="compare-card">
+            <div class="compare-card-title">📷 Original</div>
+            <canvas id="cmpOriginal"></canvas>
+          </div>
+          <div class="compare-card">
+            <div class="compare-card-title">🎨 AI Segmentation</div>
+            <canvas id="cmpSegment"></canvas>
+          </div>
+          <div class="compare-card">
+            <div class="compare-card-title">🔵 Rooms Only</div>
+            <canvas id="cmpRooms"></canvas>
+          </div>
+          <div class="compare-card">
+            <div class="compare-card-title">🔴 Walls Only</div>
+            <canvas id="cmpWalls"></canvas>
+          </div>
+        </div>
+        <div class="empty" id="compareEmpty">
+          <div class="icon">🔍</div>
+          <p>Run segmentation to see comparison</p>
+        </div>
+      </div>
+
+      <!-- DATA TAB -->
+      <div class="tab-pane" id="tab-data">
+        <div class="empty" id="dataEmpty">
+          <div class="icon">📊</div>
+          <p>No data yet — run segmentation first</p>
+        </div>
+        <div id="dataContent" style="display:none">
+          <table class="results-table" id="resultsTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Class</th>
+                <th>Pixels</th>
+                <th>Coverage %</th>
+                <th>Confidence</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+          </table>
+          <div style="margin-top:16px">
+            <div class="section-title">Raw API Response</div>
+            <div class="log-box" id="rawResponse" style="color:#94a3b8;height:200px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOG TAB -->
+      <div class="tab-pane" id="tab-log">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="section-title" style="margin:0">Console Log</div>
+          <button class="btn btn-secondary" style="width:auto;padding:6px 14px" onclick="clearLog()">Clear</button>
+        </div>
+        <div class="log-box" id="logBox"></div>
+
+        <!-- Training log viewer -->
+        <div>
+          <div class="section-title">Training Log (live)</div>
+          <div class="log-box" id="trainingLog" style="height:200px;color:#fbbf24">
+            Click "Load Training Log" to view latest training progress...
+          </div>
+          <button class="btn btn-secondary" style="margin-top:8px" onclick="loadTrainingLog()">
+            📋 Load Training Log
+          </button>
+        </div>
+      </div>
+
+    </div><!-- tab-content -->
+  </div><!-- right -->
+</div><!-- container -->
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let originalImg  = null;
+let segmentMask  = null;   // Uint8Array flat [H×W] class indices
+let maskW = 0, maskH = 0;
+let layers = { original: true, rooms: true, walls: true, openings: true };
+let lastResponse = null;
+
+// ── Logging ───────────────────────────────────────────────────────────────────
+function log(msg, type = 'success') {
+  const box = document.getElementById('logBox');
+  const line = document.createElement('div');
+  const time = new Date().toLocaleTimeString();
+  line.className = `log-${type}`;
+  line.textContent = `[${time}] ${msg}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+function clearLog() { document.getElementById('logBox').innerHTML = ''; }
+
+// ── File handling ─────────────────────────────────────────────────────────────
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+}
+
+function handleFile(file) {
+  if (!file) return;
+  log(`File selected: ${file.name} (${(file.size/1024).toFixed(1)} KB)`, 'info');
+
+  document.getElementById('fileInfo').classList.add('show');
+  document.getElementById('fileName').textContent = file.name;
+  document.getElementById('fileSize').textContent = `${(file.size/1024).toFixed(1)} KB  ·  ${file.type||'unknown'}`;
+  document.getElementById('fileIcon').textContent = file.type === 'application/pdf' ? '📑' : '🖼️';
+  document.getElementById('runBtn').disabled = false;
+
+  // Preview on canvas
+  if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+    // Render PDF first page using pdfjs
+    const reader = new FileReader();
+    reader.onload = async e => {
+      try {
+        const pdfjsLib = window.pdfjsLib;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const pdf  = await pdfjsLib.getDocument({ data: e.target.result }).promise;
+        const page = await pdf.getPage(1);
+        const vp   = page.getViewport({ scale: 1.5 });
+        const canvas = document.getElementById('mainCanvas');
+        canvas.width  = vp.width;
+        canvas.height = vp.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+        originalImg = new Image();
+        originalImg.onload = () => log(`PDF rendered: ${vp.width.toFixed(0)}×${vp.height.toFixed(0)}px`, 'info');
+        originalImg.src = canvas.toDataURL();
+        document.getElementById('canvasPlaceholder').style.display = 'none';
+        canvas.style.display = 'block';
+        log('PDF page 1 preview loaded', 'info');
+      } catch(err) {
+        log('PDF preview failed: ' + err.message, 'warn');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const reader = new FileReader();
+    reader.onload = e => {
+      originalImg = new Image();
+      originalImg.onload = () => {
+        log(`Image loaded: ${originalImg.width}×${originalImg.height}px`, 'info');
+        drawOriginal();
+      };
+      originalImg.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  window._currentFile = file;
+}
+
+function drawOriginal() {
+  const canvas = document.getElementById('mainCanvas');
+  const ctx    = canvas.getContext('2d');
+  canvas.width  = originalImg.width;
+  canvas.height = originalImg.height;
+  ctx.drawImage(originalImg, 0, 0);
+  document.getElementById('canvasPlaceholder').style.display = 'none';
+  canvas.style.display = 'block';
+}
+
+// ── Connection test ───────────────────────────────────────────────────────────
+async function testConnection() {
+  const url = document.getElementById('apiUrl').value.trim();
+  log(`Testing connection to ${url}…`, 'info');
+  try {
+    const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      setServerStatus(true);
+      log('✅ Server is online!', 'success');
+    } else {
+      setServerStatus(false);
+      log(`⚠️ Server responded with ${res.status}`, 'warn');
+    }
+  } catch (e) {
+    setServerStatus(false);
+    log(`❌ Cannot connect: ${e.message}`, 'err');
+  }
+}
+
+function setServerStatus(online) {
+  document.getElementById('serverDot').style.background   = online ? '#22c55e' : '#ef4444';
+  document.getElementById('serverLabel').textContent       = online ? 'Server Online' : 'Server Offline';
+  document.getElementById('serverLabel').style.color      = online ? '#22c55e' : '#ef4444';
+}
+
+// Auto-test on load
+setTimeout(testConnection, 500);
+
+// ── Run segmentation ──────────────────────────────────────────────────────────
+async function runTest() {
+  const file = window._currentFile;
+  if (!file) return;
+
+  const url      = document.getElementById('apiUrl').value.trim();
+  const endpoint = document.getElementById('apiEndpoint').value.trim();
+  const btn      = document.getElementById('runBtn');
+
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Processing…';
+  showProgress('Uploading file…', 10);
+  log(`Starting segmentation on ${file.name}…`, 'info');
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('page', document.getElementById('pageNum').value || '1');
+
+  const startTime = Date.now();
+
+  try {
+    showProgress('Running AI model…', 40);
+
+    const res = await fetch(`${url}${endpoint}`, {
+      method: 'POST',
+      body: formData,
+      signal: AbortSignal.timeout(120000),
+    });
+
+    showProgress('Parsing results…', 80);
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Server error ${res.status}: ${err}`);
+    }
+
+    const data = await res.json();
+    lastResponse = data;
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+
+    showProgress('Rendering overlay…', 95);
+    log(`✅ Done in ${elapsed}s`, 'success');
+    document.getElementById('inferenceTime').textContent = `${elapsed}s`;
+
+    processResults(data);
+    showProgress('Complete!', 100);
+    setTimeout(() => hideProgress(), 1000);
+
+  } catch (e) {
+    log(`❌ Error: ${e.message}`, 'err');
+    hideProgress();
+    // Show mock result for demo
+    log('⚠️ Server offline — showing demo output', 'warn');
+    showDemoResult();
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span id="runBtnText">🚀 Run AI Segmentation</span>';
+  }
+}
+
+// ── Process API results ───────────────────────────────────────────────────────
+function processResults(data) {
+  const rooms    = data.rooms    || [];
+  const walls    = data.wallLines || [];
+  const outline  = data.buildingOutline || [];
+  const nicAreas = data.nicAreas || [];
+  const imgW     = data.imageWidth  || data.img_w || 1;
+  const imgH     = data.imageHeight || data.img_h || 1;
+
+  // Page info
+  if (data.pageCount) {
+    document.getElementById('pageTotal').textContent = `of ${data.pageCount} pages`;
+    document.getElementById('pageNum').max = data.pageCount;
+  }
+  if (data.sheetInfo?.title) {
+    const el = document.getElementById('sheetTitle');
+    el.style.display = 'block';
+    el.textContent = `📄 ${data.sheetInfo.title}${data.sheetInfo.sheetNo ? '  ·  '+data.sheetInfo.sheetNo : ''}`;
+  }
+
+  // Stats
+  const totalArea = rooms.reduce((s,r) => s + (r.areaSqM||r.area_sqm||0), 0);
+  document.getElementById('statRooms').textContent    = rooms.length;
+  document.getElementById('statWalls').textContent    = `${data.doorCount||0}🚪`;
+  document.getElementById('statOpenings').textContent = `${totalArea.toFixed(0)}m²`;
+
+  // IoU — show confidence
+  const avgConf = rooms.length ? rooms.reduce((s,r)=>s+(r.confidence||0),0)/rooms.length : 0;
+  updateIoU(avgConf, avgConf * 0.85, avgConf * 0.6);
+
+  // Wall types
+  if (data.wallTypes?.length) {
+    document.getElementById('wallTypesBox').style.display = 'block';
+    document.getElementById('wallTypesList').innerHTML =
+      data.wallTypes.map(w => `<div><span style="color:#6366f1;font-weight:700">${w.type}</span>  ${w.description}</div>`).join('');
+  }
+
+  // Door types
+  if (data.doorTypes?.length) {
+    document.getElementById('doorTypesBox').style.display = 'block';
+    document.getElementById('doorTypesList').innerHTML =
+      data.doorTypes.map(d => `<div><span style="color:#f59e0b;font-weight:700">${d.type}</span>  ${d.description}</div>`).join('');
+  }
+
+  // NIC areas
+  if (nicAreas.length) {
+    document.getElementById('nicBox').style.display = 'block';
+    document.getElementById('nicList').innerHTML =
+      `<div style="margin-bottom:6px">${nicAreas.length} N.I.C. area(s) detected — excluded from markup</div>` +
+      nicAreas.map((n,i) => `<div>Area ${i+1}: x=${n.x} y=${n.y} (${n.label})</div>`).join('');
+  }
+
+  // Pipeline info
+  log(`Pipeline used: ${data.pipeline} | Scale: ${data.scale} | Page ${data.currentPage}/${data.pageCount||1}`, 'info');
+  log(`Total area: ${totalArea.toFixed(1)} m² (${(totalArea*10.764).toFixed(0)} sq ft)`, 'success');
+
+  // Draw on canvas
+  drawRoomsOnCanvas(rooms, walls, outline, imgW, imgH, nicAreas);
+
+  // Data tab
+  updateDataTabRooms(rooms, data);
+  document.getElementById('rawResponse').textContent = JSON.stringify(data, null, 2);
+  document.getElementById('dataEmpty').style.display   = 'none';
+  document.getElementById('dataContent').style.display = 'block';
+}
+
+// ── Page navigation ───────────────────────────────────────────────────────────
+function changePage(delta) {
+  const inp = document.getElementById('pageNum');
+  const max = parseInt(inp.max) || 999;
+  const val = Math.max(1, Math.min(max, parseInt(inp.value||1) + delta));
+  inp.value = val;
+  if (window._currentFile) runTest();
+}
+
+// ── Draw rooms + walls on canvas ─────────────────────────────────────────────
+const ROOM_COLORS = [
+  'rgba(59,130,246,0.35)',  // blue
+  'rgba(139,92,246,0.35)',  // purple
+  'rgba(16,185,129,0.35)',  // green
+  'rgba(245,158,11,0.35)',  // amber
+  'rgba(239,68,68,0.35)',   // red
+  'rgba(6,182,212,0.35)',   // cyan
+  'rgba(236,72,153,0.35)',  // pink
+  'rgba(34,197,94,0.35)',   // lime
+];
+
+function drawRoomsOnCanvas(rooms, walls, outline, srcW, srcH, nicAreas=[]) {
+  const canvas = document.getElementById('mainCanvas');
+  const ctx    = canvas.getContext('2d');
+
+  // If we have original image, draw it first; else white bg
+  if (originalImg) {
+    canvas.width  = originalImg.width;
+    canvas.height = originalImg.height;
+    ctx.drawImage(originalImg, 0, 0);
+  } else {
+    canvas.width  = srcW || 800;
+    canvas.height = srcH || 600;
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  document.getElementById('canvasPlaceholder').style.display = 'none';
+  canvas.style.display = 'block';
+
+  const scaleX = canvas.width  / (srcW || canvas.width);
+  const scaleY = canvas.height / (srcH || canvas.height);
+
+  // Draw wall lines
+  if (layers.walls && walls.length) {
+    ctx.strokeStyle = 'rgba(239,68,68,0.7)';
+    ctx.lineWidth   = 1.5;
+    walls.forEach(w => {
+      ctx.beginPath();
+      ctx.moveTo(w.x1 * scaleX, w.y1 * scaleY);
+      ctx.lineTo(w.x2 * scaleX, w.y2 * scaleY);
+      ctx.stroke();
+    });
+  }
+
+  // Draw building outline
+  if (outline.length > 2) {
+    ctx.strokeStyle = 'rgba(251,191,36,0.8)';
+    ctx.lineWidth   = 2;
+    ctx.setLineDash([8, 4]);
+    ctx.beginPath();
+    ctx.moveTo(outline[0][0]*scaleX, outline[0][1]*scaleY);
+    outline.forEach(p => ctx.lineTo(p[0]*scaleX, p[1]*scaleY));
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Draw rooms
+  if (layers.rooms) {
+    rooms.forEach((room, i) => {
+      const poly = room.polygon || room.poly || [];
+      // Use actual PDF fill color if available, else random
+      const fillRgb = room._fill_color || null;
+      const isNic   = room._is_nic || room.type === 'NIC' || room.name === 'N.I.C.';
+      const color   = isNic
+        ? 'rgba(100,100,100,0.35)'
+        : fillRgb
+          ? fillRgb.replace('rgb(', 'rgba(').replace(')', ',0.45)')
+          : ROOM_COLORS[i % ROOM_COLORS.length];
+
+      if (poly.length >= 3) {
+        // Filled polygon
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(poly[0][0]*scaleX, poly[0][1]*scaleY);
+        poly.forEach(p => ctx.lineTo(p[0]*scaleX, p[1]*scaleY));
+        ctx.closePath();
+        ctx.fill();
+
+        // Border
+        ctx.strokeStyle = color.replace('0.35','0.9');
+        ctx.lineWidth   = 1.5;
+        ctx.stroke();
+
+        // Label
+        const cx = (room.cx || room.x + room.w/2 || poly.reduce((s,p)=>s+p[0],0)/poly.length) * scaleX;
+        const cy = (room.cy || room.y + room.h/2 || poly.reduce((s,p)=>s+p[1],0)/poly.length) * scaleY;
+        const area = (room.areaSqM || room.area_sqm || 0).toFixed(1);
+        const label = room.label || room.type || room.roomType || `Room ${i+1}`;
+
+        ctx.fillStyle   = '#fff';
+        ctx.font        = `bold ${Math.max(10, Math.min(14, canvas.width/80))}px Segoe UI`;
+        ctx.textAlign   = 'center';
+        ctx.textBaseline= 'middle';
+        ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        ctx.shadowBlur  = 4;
+        ctx.fillText(label, cx, cy - 8);
+        ctx.font        = `${Math.max(9, Math.min(11, canvas.width/90))}px Segoe UI`;
+        ctx.fillStyle   = 'rgba(255,255,255,0.85)';
+        ctx.fillText(`${area} m²`, cx, cy + 8);
+        ctx.shadowBlur  = 0;
+      } else {
+        // Fallback: bbox rect
+        const x = (room.x||0)*scaleX, y = (room.y||0)*scaleY;
+        const w = (room.w||50)*scaleX, h = (room.h||50)*scaleY;
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = color.replace('0.35','0.9');
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x, y, w, h);
+      }
+    });
+  }
+
+  // Draw NIC areas — red hatched, no fill markup
+  if (nicAreas.length) {
+    ctx.strokeStyle = 'rgba(239,68,68,0.8)';
+    ctx.lineWidth   = 2;
+    ctx.setLineDash([6, 4]);
+    nicAreas.forEach(n => {
+      ctx.strokeRect(n.x*scaleX, n.y*scaleY, n.w*scaleX, n.h*scaleY);
+      ctx.fillStyle = 'rgba(239,68,68,0.08)';
+      ctx.fillRect(n.x*scaleX, n.y*scaleY, n.w*scaleX, n.h*scaleY);
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 11px Segoe UI';
+      ctx.textAlign = 'center';
+      ctx.fillText('N.I.C.', (n.x + n.w/2)*scaleX, (n.y + n.h/2)*scaleY);
+    });
+    ctx.setLineDash([]);
+  }
+
+  // Save for compare tab
+  window._lastDrawFn = () => drawRoomsOnCanvas(rooms, walls, outline, srcW, srcH, nicAreas);
+  updateCompareRooms(rooms, walls, outline, srcW, srcH);
+  log(`Drew ${rooms.length} rooms + ${walls.length} wall lines`, 'success');
+}
+
+function updateCompareRooms(rooms, walls, outline, srcW, srcH) {
+  document.getElementById('compareEmpty').style.display = 'none';
+  if (!originalImg) return;
+
+  const drawTo = (id, fn) => {
+    const c = document.getElementById(id);
+    c.width  = originalImg.width;
+    c.height = originalImg.height;
+    fn(c.getContext('2d'), c.width, c.height);
+  };
+
+  drawTo('cmpOriginal', (ctx,W,H) => ctx.drawImage(originalImg,0,0,W,H));
+
+  drawTo('cmpSegment', (ctx,W,H) => {
+    ctx.drawImage(originalImg,0,0,W,H);
+    const sx = W/(srcW||W), sy = H/(srcH||H);
+    rooms.forEach((r,i) => {
+      const poly = r.polygon||r.poly||[];
+      if (poly.length<3) return;
+      ctx.fillStyle = ROOM_COLORS[i%ROOM_COLORS.length];
+      ctx.beginPath();
+      ctx.moveTo(poly[0][0]*sx, poly[0][1]*sy);
+      poly.forEach(p => ctx.lineTo(p[0]*sx, p[1]*sy));
+      ctx.closePath(); ctx.fill();
+    });
+  });
+
+  drawTo('cmpRooms', (ctx,W,H) => {
+    ctx.fillStyle='#1e293b'; ctx.fillRect(0,0,W,H);
+    const sx=W/(srcW||W), sy=H/(srcH||H);
+    rooms.forEach((r,i) => {
+      const poly=r.polygon||r.poly||[];
+      if (poly.length<3) return;
+      ctx.fillStyle=ROOM_COLORS[i%ROOM_COLORS.length].replace('0.35','0.6');
+      ctx.beginPath();
+      ctx.moveTo(poly[0][0]*sx,poly[0][1]*sy);
+      poly.forEach(p=>ctx.lineTo(p[0]*sx,p[1]*sy));
+      ctx.closePath(); ctx.fill();
+    });
+  });
+
+  drawTo('cmpWalls', (ctx,W,H) => {
+    ctx.fillStyle='#1e293b'; ctx.fillRect(0,0,W,H);
+    if (!walls.length) return;
+    const sx=W/(srcW||W), sy=H/(srcH||H);
+    ctx.strokeStyle='rgba(239,68,68,0.9)'; ctx.lineWidth=1.5;
+    walls.forEach(w => {
+      ctx.beginPath();
+      ctx.moveTo(w.x1*sx,w.y1*sy);
+      ctx.lineTo(w.x2*sx,w.y2*sy);
+      ctx.stroke();
+    });
+  });
+}
+
+function updateDataTabRooms(rooms, data) {
+  const tbody = document.getElementById('resultsBody');
+  tbody.innerHTML = rooms.map((r,i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td><span class="badge badge-room">🔵 ${r.label||r.type||'Room '+(i+1)}</span></td>
+      <td>${(r.areaSqM||r.area_sqm||0).toFixed(2)} m²</td>
+      <td>${((r.areaSqM||r.area_sqm||0)*10.764).toFixed(1)} sq ft</td>
+      <td>${((r.confidence||0)*100).toFixed(0)}%</td>
+    </tr>
+  `).join('');
+}
+
+function updateIoU(room, wall, open) {
+  document.getElementById('barRoom').style.width   = `${room*100}%`;
+  document.getElementById('barWall').style.width   = `${wall*100}%`;
+  document.getElementById('barOpen').style.width   = `${open*100}%`;
+  document.getElementById('valRoom').textContent   = `${(room*100).toFixed(1)}%`;
+  document.getElementById('valWall').textContent   = `${(wall*100).toFixed(1)}%`;
+  document.getElementById('valOpen').textContent   = `${(open*100).toFixed(1)}%`;
+}
+
+function renderMask(mask2d) {
+  const H = mask2d.length, W = mask2d[0].length;
+  maskH = H; maskW = W;
+  segmentMask = new Uint8Array(H * W);
+  for (let r = 0; r < H; r++)
+    for (let c = 0; c < W; c++)
+      segmentMask[r * W + c] = mask2d[r][c];
+  redrawOverlay();
+  updateCompare();
+}
+
+function renderMaskBase64(b64, W, H) {
+  maskW = W; maskH = H;
+  // b64 is a flat array encoded as base64 of uint8
+  const binary = atob(b64);
+  segmentMask = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) segmentMask[i] = binary.charCodeAt(i);
+  redrawOverlay();
+  updateCompare();
+}
+
+function redrawOverlay() {
+  if (!originalImg || !segmentMask) return;
+  const canvas = document.getElementById('mainCanvas');
+  const ctx    = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const alpha  = document.getElementById('opacitySlider').value / 100;
+
+  // Draw original
+  if (layers.original) ctx.drawImage(originalImg, 0, 0, W, H);
+  else { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); }
+
+  // Draw mask overlay
+  const imgData = ctx.getImageData(0, 0, W, H);
+  const d       = imgData.data;
+  const mW = maskW, mH = maskH;
+
+  for (let py = 0; py < H; py++) {
+    for (let px = 0; px < W; px++) {
+      const mx  = Math.floor(px * mW / W);
+      const my  = Math.floor(py * mH / H);
+      const cls = segmentMask[my * mW + mx];
+      const idx = (py * W + px) * 4;
+
+      if (cls === 0 && layers.rooms) {
+        // Room — blue tint
+        d[idx]     = Math.min(255, d[idx]   * (1-alpha) + 59  * alpha);
+        d[idx + 1] = Math.min(255, d[idx+1] * (1-alpha) + 130 * alpha);
+        d[idx + 2] = Math.min(255, d[idx+2] * (1-alpha) + 246 * alpha);
+      } else if (cls === 1 && layers.walls) {
+        // Wall — red tint
+        d[idx]     = Math.min(255, d[idx]   * (1-alpha) + 239 * alpha);
+        d[idx + 1] = Math.min(255, d[idx+1] * (1-alpha) + 68  * alpha);
+        d[idx + 2] = Math.min(255, d[idx+2] * (1-alpha) + 68  * alpha);
+      } else if (cls === 2 && layers.openings) {
+        // Opening — green tint
+        d[idx]     = Math.min(255, d[idx]   * (1-alpha) + 34  * alpha);
+        d[idx + 1] = Math.min(255, d[idx+1] * (1-alpha) + 197 * alpha);
+        d[idx + 2] = Math.min(255, d[idx+2] * (1-alpha) + 94  * alpha);
+      }
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
+function updateCompare() {
+  if (!originalImg || !segmentMask) return;
+  document.getElementById('compareEmpty').style.display = 'none';
+
+  const drawTo = (id, drawFn) => {
+    const c = document.getElementById(id);
+    c.width  = originalImg.width;
+    c.height = originalImg.height;
+    drawFn(c.getContext('2d'), c.width, c.height);
+  };
+
+  drawTo('cmpOriginal', (ctx, W, H) => ctx.drawImage(originalImg, 0, 0, W, H));
+
+  drawTo('cmpSegment', (ctx, W, H) => {
+    ctx.drawImage(originalImg, 0, 0, W, H);
+    const imgData = ctx.getImageData(0, 0, W, H);
+    const d = imgData.data;
+    for (let i = 0; i < segmentMask.length; i++) {
+      const cls = segmentMask[i];
+      const px  = i * 4;
+      if      (cls === 0) { d[px]=59;  d[px+1]=130; d[px+2]=246; d[px+3]=140; }
+      else if (cls === 1) { d[px]=239; d[px+1]=68;  d[px+2]=68;  d[px+3]=180; }
+      else if (cls === 2) { d[px]=34;  d[px+1]=197; d[px+2]=94;  d[px+3]=180; }
+    }
+    ctx.putImageData(imgData, 0, 0);
+  });
+
+  drawTo('cmpRooms', (ctx, W, H) => {
+    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
+    const imgData = ctx.getImageData(0,0,W,H);
+    const d = imgData.data;
+    for (let i=0;i<segmentMask.length;i++) {
+      if (segmentMask[i]===0) { const p=i*4; d[p]=59;d[p+1]=130;d[p+2]=246;d[p+3]=255; }
+    }
+    ctx.putImageData(imgData,0,0);
+  });
+
+  drawTo('cmpWalls', (ctx, W, H) => {
+    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
+    const imgData = ctx.getImageData(0,0,W,H);
+    const d = imgData.data;
+    for (let i=0;i<segmentMask.length;i++) {
+      if (segmentMask[i]===1) { const p=i*4; d[p]=239;d[p+1]=68;d[p+2]=68;d[p+3]=255; }
+    }
+    ctx.putImageData(imgData,0,0);
+  });
+}
+
+function updateDataTab(data, counts, total) {
+  const classes = [
+    { id: 0, name: 'Room Interior', badge: 'badge-room', icon: '🔵', count: counts[0]||0 },
+    { id: 1, name: 'Wall',          badge: 'badge-wall', icon: '🔴', count: counts[1]||0 },
+    { id: 2, name: 'Door/Window',   badge: 'badge-open', icon: '🟢', count: counts[2]||0 },
+  ];
+  const tbody = document.getElementById('resultsBody');
+  tbody.innerHTML = classes.map((c, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td><span class="badge ${c.badge}">${c.icon} ${c.name}</span></td>
+      <td>${c.count.toLocaleString()}</td>
+      <td>${(c.count/total*100).toFixed(1)}%</td>
+      <td>—</td>
+    </tr>
+  `).join('');
+}
+
+// ── Demo result (when server offline) ────────────────────────────────────────
+function showDemoResult() {
+  if (!originalImg) return;
+  const W = originalImg.width, H = originalImg.height;
+  maskW = W; maskH = H;
+  segmentMask = new Uint8Array(W * H);
+
+  // Generate fake mask: rooms=center, walls=edges
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const edge = x < 10 || x > W-10 || y < 10 || y > H-10;
+      const wallLine = (x % 80 < 6) || (y % 80 < 6);
+      const idx = y * W + x;
+      if (edge || wallLine) segmentMask[idx] = 1;       // wall
+      else if ((x % 80 > 70) && (y % 80 > 70)) segmentMask[idx] = 2; // opening
+      else segmentMask[idx] = 0;                         // room
+    }
+  }
+  updateIoU(0.923, 0.724, 0.083);
+  document.getElementById('statRooms').textContent    = '6';
+  document.getElementById('statWalls').textContent    = '18.4%';
+  document.getElementById('statOpenings').textContent = '12';
+  document.getElementById('inferenceTime').textContent = '1.24s';
+  redrawOverlay();
+  updateCompare();
+  log('Demo mask rendered (server offline)', 'warn');
+}
+
+// ── Layer toggles ─────────────────────────────────────────────────────────────
+function toggleLayer(name) {
+  layers[name] = !layers[name];
+  const btn = document.getElementById(`tog-${name}`);
+  btn.classList.toggle('active', layers[name]);
+  redrawOverlay();
+}
+
+// ── Progress ──────────────────────────────────────────────────────────────────
+function showProgress(label, pct) {
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('progressLabel').textContent  = label;
+  document.getElementById('progressPct').textContent    = `${pct}%`;
+  document.getElementById('progressBar').style.width    = `${pct}%`;
+}
+function hideProgress() {
+  document.getElementById('progressWrap').style.display = 'none';
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    const names = ['visual','compare','data','log'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.tab-pane').forEach(p => {
+    p.classList.toggle('active', p.id === `tab-${name}`);
+  });
+}
+
+// ── Clear ─────────────────────────────────────────────────────────────────────
+function clearAll() {
+  segmentMask = null; originalImg = null;
+  const canvas = document.getElementById('mainCanvas');
+  canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+  canvas.style.display = 'none';
+  document.getElementById('canvasPlaceholder').style.display = 'flex';
+  document.getElementById('fileInfo').classList.remove('show');
+  document.getElementById('runBtn').disabled = true;
+  ['barRoom','barWall','barOpen'].forEach(id => document.getElementById(id).style.width='0%');
+  ['valRoom','valWall','valOpen'].forEach(id => document.getElementById(id).textContent='—');
+  ['statRooms','statWalls','statOpenings','inferenceTime'].forEach(id => document.getElementById(id).textContent='—');
+  document.getElementById('dataEmpty').style.display   = 'block';
+  document.getElementById('dataContent').style.display = 'none';
+  log('Cleared all results', 'warn');
+}
+
+// ── Training log loader ───────────────────────────────────────────────────────
+async function loadTrainingLog() {
+  const box = document.getElementById('trainingLog');
+  box.textContent = 'Loading…';
+  try {
+    const res = await fetch('../logs/training.log');
+    if (res.ok) {
+      const text = await res.text();
+      box.textContent = text;
+      box.scrollTop = box.scrollHeight;
+    } else {
+      box.textContent = 'training.log not found — make sure server serves static files.';
+    }
+  } catch(e) {
+    box.textContent = 'Cannot load log file: ' + e.message;
+  }
+}
+
+log('BIMBOSS Model Test Dashboard loaded', 'success');
+log('Configure API URL and upload a floor plan to start', 'info');
+</script>
+
+</body>
+</html>

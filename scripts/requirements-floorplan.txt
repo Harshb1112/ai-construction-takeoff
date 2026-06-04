@@ -1,0 +1,28 @@
+# Floor Plan Analyzer dependencies
+# Install: pip install -r scripts/requirements-floorplan.txt
+
+# Core
+fastapi>=0.110.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9
+
+# Image processing (required)
+opencv-python>=4.9.0
+Pillow>=10.0.0
+scipy>=1.12.0
+numpy>=1.26.0
+
+# PDF support (install one or both)
+PyMuPDF>=1.24.0          # Fast, recommended
+# pdf2image>=1.17.0      # Alternative — needs poppler
+
+# OCR / scale detection
+pytesseract>=0.3.10      # Also needs Tesseract binary: https://github.com/tesseract-ocr/tesseract/releases
+
+# ── CubiCasa5k (optional — best segmentation quality) ─────────────
+# Uncomment to install:
+# torch>=2.2.0
+# torchvision>=0.17.0
+# Then clone the model:
+#   git clone https://github.com/CubiCasa/CubiCasa5k models/CubiCasa5k
+#   Download pretrained weights to models/CubiCasa5k/model/
