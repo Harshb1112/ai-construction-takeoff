@@ -133,8 +133,14 @@ def _parse_scale_notation(text: str) -> tuple[float, str] | None:
     # ratio = N means 1 unit on paper = N units in reality
     t = text.strip()
 
-    # Metric ratio: 1:N or 1/N
-    m = re.search(r'(?:scale\s*)?1\s*[:/]\s*(\d+)', t, re.IGNORECASE)
+    # Skip dates: MM/DD/YYYY or DD/MM/YYYY patterns
+    t_no_date = re.sub(r'\b\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b', '', t)
+
+    # Metric ratio: must have "scale" keyword OR be standalone "1:N" (not inside a date/number)
+    m = re.search(r'(?:scale\s+)1\s*[:/]\s*(\d+)', t_no_date, re.IGNORECASE)
+    if not m:
+        # Also match standalone "1:100" not preceded by digits (avoid date false positives)
+        m = re.search(r'(?<!\d)1\s*:\s*(\d{2,4})(?!\d)', t_no_date, re.IGNORECASE)
     if m:
         ratio = int(m.group(1))
         if 10 <= ratio <= 5000:
@@ -1693,25 +1699,31 @@ def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = No
         
         room_frac = (pred_map == 1).sum() / pred_map.size
         if room_frac > 0.75:
-            # Over-predicting — use wall class to carve out room boundaries
+            # Over-predicting — wall pixels se rooms separate karo
             print(f"[Model] room={room_frac:.0%} > 75% — using wall-subtracted argmax")
-            wall_mask = (pred_map == 2)   # class 2 = wall
-            # Room = argmax room AND NOT wall
-            room_mask = ((pred_map == 1) & ~wall_mask).astype(np.uint8) * 255
+            wall_mask  = (pred_map == 2)
+            bg_mask    = (pred_map == 0)
+            # Room = not wall, not background
+            room_mask  = ((pred_map == 1) & ~wall_mask & ~bg_mask).astype(np.uint8) * 255
+            # Erode to break thin connections between rooms
+            k_erode = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+            room_mask = cv2.erode(room_mask, k_erode, iterations=2)
+            room_mask = cv2.dilate(room_mask, k_erode, iterations=1)
         else:
             print(f"[Model] room coverage={room_frac:.1%} (using argmax prediction)")
     else:
         # fallback: use lower threshold
         room_mask = (prob_map > 0.35).astype(np.uint8) * 255
 
-    # Morphological cleanup - REDUCED iterations to preserve more room components
-    k_open = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))  # smaller kernel
-    room_mask = cv2.morphologyEx(room_mask, cv2.MORPH_OPEN,  k_open, iterations=1)  # reduced from 2
-    room_mask = cv2.morphologyEx(room_mask, cv2.MORPH_CLOSE, k_open, iterations=1)
+    # Morphological cleanup
+    k_open = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    room_mask = cv2.morphologyEx(room_mask, cv2.MORPH_OPEN,  k_open, iterations=1)
+    room_mask = cv2.morphologyEx(room_mask, cv2.MORPH_CLOSE, k_open, iterations=2)
 
     n_lbl, labeled = cv2.connectedComponents(room_mask, connectivity=8)
-    min_px = max(200, int(h * w * 0.002))  # LOWERED from 0.004 to detect smaller rooms
+    min_px = max(100, int(h * w * 0.001))   # aur chhote rooms bhi detect ho
     max_px = int(h * w * 0.50)
+    print(f"[Model] {n_lbl-1} components found, min_px={min_px}")
 
     rooms = []
     for lbl in range(1, n_lbl):
