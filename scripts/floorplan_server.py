@@ -254,12 +254,14 @@ def detect_scale_from_image(img_pil) -> tuple[float, str] | None:
 
     img_arr = np.array(img_pil.convert("RGB"))
     h, w    = img_arr.shape[:2]
-    
-    # Search multiple regions: bottom 35%, top 20%, and right 30%
+
+    # Search multiple regions — title block can be anywhere
     regions = [
-        ("bottom", img_arr[int(h * 0.65):, :]),          # bottom 35% (most common)
-        ("top",    img_arr[:int(h * 0.20), :]),          # top 20% (some drawings)
-        ("right",  img_arr[:, int(w * 0.70):]),          # right 30% (vertical title blocks)
+        ("bottom-right", img_arr[int(h*0.60):, int(w*0.55):]),  # bottom-right (most common US)
+        ("bottom",       img_arr[int(h*0.70):, :]),              # full bottom strip
+        ("top",          img_arr[:int(h*0.20), :]),              # top strip
+        ("right",        img_arr[:, int(w*0.70):]),              # right column
+        ("bottom-left",  img_arr[int(h*0.60):, :int(w*0.45)]),  # bottom-left
     ]
 
     # EasyOCR - try each region
@@ -1689,17 +1691,18 @@ def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = No
         pred_map  = np.argmax(full_probs, axis=0)   # (H, W) class ids
         room_mask = (pred_map == 1).astype(np.uint8) * 255
         
-        # Sanity check: if model predicts room > 75% of image → likely wrong
-        # (real floor plans: rooms are 20-60% of image, rest is bg/walls/margins)
         room_frac = (pred_map == 1).sum() / pred_map.size
         if room_frac > 0.75:
-            print(f"[Model] room={room_frac:.0%} > 75% — model over-predicting, using threshold fallback")
-            room_mask = (prob_map > 0.65).astype(np.uint8) * 255
+            # Over-predicting — use wall class to carve out room boundaries
+            print(f"[Model] room={room_frac:.0%} > 75% — using wall-subtracted argmax")
+            wall_mask = (pred_map == 2)   # class 2 = wall
+            # Room = argmax room AND NOT wall
+            room_mask = ((pred_map == 1) & ~wall_mask).astype(np.uint8) * 255
         else:
             print(f"[Model] room coverage={room_frac:.1%} (using argmax prediction)")
     else:
-        # fallback: use higher threshold on room prob map
-        room_mask = (prob_map > 0.65).astype(np.uint8) * 255
+        # fallback: use lower threshold
+        room_mask = (prob_map > 0.35).astype(np.uint8) * 255
 
     # Morphological cleanup - REDUCED iterations to preserve more room components
     k_open = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))  # smaller kernel
