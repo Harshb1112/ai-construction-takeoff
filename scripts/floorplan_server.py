@@ -1764,8 +1764,8 @@ def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = No
     room_mask = cv2.morphologyEx(room_mask, cv2.MORPH_CLOSE, k_open, iterations=2)
 
     n_lbl, labeled = cv2.connectedComponents(room_mask, connectivity=8)
-    min_px = max(100, int(h * w * 0.0005))
-    max_px = int(h * w * 0.90)   # almost whole image allowed
+    min_px = 100    # bahut chhote blobs hi skip karo
+    max_px = int(h * w * 0.90)
     print(f"[Model] {n_lbl-1} components found, min_px={min_px} max_px={max_px}")
 
     rooms = []
@@ -1808,8 +1808,8 @@ def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = No
             continue
 
         area_sqm = round(px * (mpp ** 2), 2) if mpp > 0 else round(px / 1000.0, 2)
-        if mpp > 0 and (area_sqm < 0.5 or area_sqm > 5000):
-            continue
+        if mpp > 0 and area_sqm > 5000:
+            continue  # sirf bahut bade blobs skip karo
 
         cnts, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not cnts:
