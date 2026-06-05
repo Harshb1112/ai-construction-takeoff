@@ -912,6 +912,74 @@ def detect_doors_windows(gray: np.ndarray, mpp: float,
 _model = None
 _model_meta: dict = {}
 
+# CubiCasa model (5000 floor plans pe trained — much better)
+_CUBICASA_CKPT = _ROOT / "models" / "model_output" / "cubicasa_model.pth"
+_cubicasa_model = None
+
+def _load_cubicasa():
+    """Load CubiCasa pre-trained model (17M params, 5000 floor plans)."""
+    global _cubicasa_model
+    if _cubicasa_model is not None:
+        return _cubicasa_model
+    if not HAS_TORCH or not _CUBICASA_CKPT.exists():
+        return None
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(_ROOT))
+        from floortrans.models.model_1427 import model_1427
+        ckpt = torch.load(str(_CUBICASA_CKPT), map_location=DEVICE, weights_only=False)
+        model_1427.load_state_dict(ckpt)
+        model_1427.eval()
+        model_1427.to(DEVICE)
+        _cubicasa_model = model_1427
+        n = sum(p.numel() for p in model_1427.parameters()) / 1e6
+        print(f"[CubiCasa] Loaded cubicasa_model.pth  params={n:.1f}M  device={DEVICE}")
+        return _cubicasa_model
+    except Exception as e:
+        print(f"[CubiCasa] Load failed: {e}")
+        return None
+
+
+def run_cubicasa_inference(img_rgb: np.ndarray) -> np.ndarray | None:
+    """
+    CubiCasa model se room segmentation.
+    Returns (H, W) room mask — 1=room, 0=background
+    Input: RGB ndarray any size
+    """
+    model = _load_cubicasa()
+    if model is None:
+        return None
+    try:
+        import torch.nn.functional as F
+        # Resize to 256x256 (CubiCasa input size)
+        img_256 = cv2.resize(img_rgb, (256, 256), interpolation=cv2.INTER_AREA)
+        # Normalize ImageNet
+        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+        std  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+        inp  = ((img_256.astype(np.float32) / 255.0) - mean) / std
+        inp  = torch.from_numpy(inp.transpose(2, 0, 1)).unsqueeze(0).float().to(DEVICE)
+
+        with torch.no_grad():
+            out = model(inp)  # (1, 51, H, W)
+
+        # input_slice = [21, 12, 11] — heatmap(21) + rooms(12) + icons(11)
+        # Room channels: 21-32
+        room_logits = out[0, 21:33]  # (12, H, W)
+        room_pred   = room_logits.argmax(0).cpu().numpy()  # 0=background, 1-11=room types
+
+        # Binary mask: room (>0) vs background (0)
+        room_mask = (room_pred > 0).astype(np.uint8)
+
+        # Resize back to original image size
+        h, w = img_rgb.shape[:2]
+        room_mask_full = cv2.resize(room_mask, (w, h), interpolation=cv2.INTER_NEAREST)
+
+        return room_mask_full  # 1=room, 0=background
+    except Exception as e:
+        print(f"[CubiCasa] Inference error: {e}")
+        return None
+
+
 def _load_model():
     """
     Load trained model. Tries ONNX first (fast, no arch dependency),
@@ -1696,6 +1764,52 @@ def pipeline_text_guided(pdf_bytes: bytes, page_num: int,
 
 # ── Pipeline C: U-Net model ───────────────────────────────────────────────────
 
+def _extract_rooms_from_components(labeled, n_lbl, min_px, max_px,
+                                   h, w, fp_x_max, fp_y_max, mpp,
+                                   prob_map, img_rgb):
+    """Connected components se room list banao."""
+    rooms = []
+    for lbl in range(1, n_lbl):
+        comp = (labeled == lbl).astype(np.uint8) * 255
+        px   = int(comp.sum() / 255)
+        if not (min_px <= px <= max_px):
+            continue
+        rows_nz, cols_nz = np.where(comp)
+        y0, y1 = int(rows_nz.min()), int(rows_nz.max())
+        x0, x1 = int(cols_nz.min()), int(cols_nz.max())
+        if x0 > fp_x_max or y0 > fp_y_max:
+            continue
+        x1 = min(x1, fp_x_max)
+        y1 = min(y1, fp_y_max)
+        bw_, bh_ = x1-x0, y1-y0
+        if bw_ < 10 or bh_ < 10:
+            continue
+        if x0 < 2 and y0 < 2 and x1 > w-2 and y1 > h-2:
+            continue
+        area_sqm = round(px * (mpp ** 2), 2) if mpp > 0 else round(px / 1000.0, 2)
+        if mpp > 0 and area_sqm > 5000:
+            continue
+        cnts, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not cnts:
+            continue
+        cnt    = max(cnts, key=cv2.contourArea)
+        arc    = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, 0.010*arc, True)
+        if len(approx) > 30:
+            approx = cv2.approxPolyDP(cnt, 0.020*arc, True)
+        poly = [[int(min(p[0][0], fp_x_max)), int(min(p[0][1], fp_y_max))] for p in approx]
+        if len(poly) < 3:
+            poly = [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]
+        if prob_map is not None and prob_map.ndim == 2:
+            conf = round(float(prob_map[rows_nz, cols_nz].mean()), 3)
+        else:
+            conf = 0.7
+        rec = _build_room_record(len(rooms), x0, y0, x1, y1,
+                                 poly, area_sqm, mpp, confidence=conf)
+        rooms.append(rec)
+    return rooms
+
+
 def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = None) -> list[dict] | None:
     """
     Use trained U-Net to segment room interiors.
@@ -1714,12 +1828,34 @@ def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = No
     if fp_y_max is None:
         fp_y_max = int(h * 0.92)
     
+    # ── Try CubiCasa first (5000 floor plans trained — much better) ──
+    cubicasa_mask = run_cubicasa_inference(img_rgb)
+    if cubicasa_mask is not None:
+        # Restrict to floor plan bounds
+        room_mask_full = np.zeros((h, w), dtype=np.uint8)
+        room_mask_full[:fp_y_max, :fp_x_max] = cubicasa_mask[:fp_y_max, :fp_x_max]
+        room_mask_full = room_mask_full * 255
+        # Morphological cleanup
+        k3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        room_mask_full = cv2.morphologyEx(room_mask_full, cv2.MORPH_OPEN,  k3, iterations=1)
+        room_mask_full = cv2.morphologyEx(room_mask_full, cv2.MORPH_CLOSE, k3, iterations=2)
+        n_lbl, labeled = cv2.connectedComponents(room_mask_full, connectivity=8)
+        min_px = 100
+        max_px = int(h * w * 0.90)
+        print(f"[CubiCasa] {n_lbl-1} components, min_px={min_px}")
+        rooms = _extract_rooms_from_components(labeled, n_lbl, min_px, max_px,
+                                               h, w, fp_x_max, fp_y_max, mpp,
+                                               cubicasa_mask, img_rgb)
+        if rooms:
+            print(f"[CubiCasa] {len(rooms)} rooms detected")
+            return rooms
+        print("[CubiCasa] No valid rooms — falling back to UNet")
+
     prob_map = run_model_inference(img_rgb)
     if prob_map is None:
         return None
 
     # Use argmax across ALL classes — not just room threshold
-    # This prevents over-prediction of "room" class on walls/background
     full_probs = _run_model_full_probs(img_rgb)
     if full_probs is not None:
         # argmax: pick class with highest probability per pixel
