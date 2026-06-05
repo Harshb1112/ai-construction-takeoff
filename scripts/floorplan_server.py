@@ -275,7 +275,16 @@ def detect_scale_from_image(img_pil) -> tuple[float, str] | None:
     if reader is not None:
         for region_name, region_img in regions:
             try:
-                results = reader.readtext(region_img, detail=0, paragraph=True)
+                # Red text boost: convert red channel to high contrast gray
+                # Normal OCR misses red text because red blends with white bg
+                r_ch = region_img[:, :, 0].astype(np.int16)
+                g_ch = region_img[:, :, 1].astype(np.int16)
+                b_ch = region_img[:, :, 2].astype(np.int16)
+                red_mask = ((r_ch - g_ch > 40) & (r_ch - b_ch > 40))
+                region_enhanced = region_img.copy()
+                region_enhanced[red_mask] = [0, 0, 0]  # red → black for OCR
+
+                results = reader.readtext(region_enhanced, detail=0, paragraph=True)
                 text = " ".join(results)
                 print(f"[Scale] EasyOCR ({region_name}) read: {text[:200]}")
 
@@ -1945,6 +1954,34 @@ async def analyze_floorplan(
 
     fname  = (file.filename or "").lower()
     is_pdf = fname.endswith(".pdf") or data[:4] == b"%PDF"
+    is_dwg = fname.endswith((".dwg", ".dxf", ".drw"))
+
+    # ── DWG/DXF — convert to image via ezdxf ─────────────────────────────────
+    if is_dwg:
+        try:
+            import ezdxf
+            from ezdxf.addons.drawing import RenderContext, Frontend
+            from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+            import matplotlib.pyplot as plt
+            import tempfile, os as _os
+            doc_dxf = ezdxf.read(io.BytesIO(data))
+            msp = doc_dxf.modelspace()
+            fig = plt.figure(figsize=(16, 12))
+            ax  = fig.add_axes([0, 0, 1, 1])
+            ctx = RenderContext(doc_dxf)
+            out = MatplotlibBackend(ax)
+            Frontend(ctx, out).draw_layout(msp, finalize=True)
+            tmp = tempfile.mktemp(suffix=".png")
+            fig.savefig(tmp, dpi=150, bbox_inches="tight")
+            plt.close(fig)
+            with open(tmp, "rb") as f:
+                data = f.read()
+            _os.unlink(tmp)
+            fname  = fname.replace(".dwg", ".png").replace(".dxf", ".png").replace(".drw", ".png")
+            is_dwg = False
+            print(f"[Load] DWG/DXF converted to PNG")
+        except Exception as e:
+            raise HTTPException(400, f"DWG/DXF convert failed: {e} — pip install ezdxf matplotlib")
 
     # ── Load image ────────────────────────────────────────────────────────────
     page_num = max(0, page - 1)
@@ -2618,7 +2655,11 @@ async def detect_scale_endpoint(
     data     = await file.read()
     fname    = (file.filename or "").lower()
     is_pdf   = fname.endswith(".pdf") or data[:4] == b"%PDF"
+    is_dwg   = fname.endswith((".dwg", ".dxf", ".drw"))
     page_num = max(0, page - 1)
+
+    if is_dwg:
+        return JSONResponse({"error": "DWG scale detection not yet supported via this endpoint", "scale": None})
 
     if is_pdf:
         result = load_pdf_page(data, page_num, max_px=1600)
