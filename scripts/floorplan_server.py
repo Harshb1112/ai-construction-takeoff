@@ -952,8 +952,8 @@ def run_cubicasa_inference(img_rgb: np.ndarray) -> np.ndarray | None:
         return None
     try:
         import torch.nn.functional as F
-        # Resize to 256x256 (CubiCasa input size)
-        img_256 = cv2.resize(img_rgb, (256, 256), interpolation=cv2.INTER_AREA)
+        # CubiCasa: 512x512 gives better results than 256x256
+        img_256 = cv2.resize(img_rgb, (512, 512), interpolation=cv2.INTER_AREA)
         # Normalize ImageNet
         mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
         std  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
@@ -2174,12 +2174,12 @@ async def analyze_floorplan(
     # ── Load image ────────────────────────────────────────────────────────────
     page_num = max(0, page - 1)
     if is_pdf:
-        result = load_pdf_page(data, page_num, max_px=1600)
+        result = load_pdf_page(data, page_num, max_px=2400)
         if result is None:
             raise HTTPException(503, "PyMuPDF required for PDF: pip install PyMuPDF")
         img_pil, actual_dpi = result
     else:
-        result = load_image_file(data, fname, max_px=1600)
+        result = load_image_file(data, fname, max_px=2400)
         if result is None:
             raise HTTPException(503, "Pillow required: pip install pillow")
         img_pil, actual_dpi = result
@@ -2583,7 +2583,7 @@ async def analyze_all_pages(
         print(f"\n[AllPages] ── Page {page_num+1}/{total_pages} ──────────────")
 
         # Load page
-        result = load_pdf_page(data, page_num, max_px=1600)
+        result = load_pdf_page(data, page_num, max_px=2400)
         if result is None:
             print(f"[AllPages] Page {page_num+1}: load failed — skipping")
             all_page_results.append({
@@ -2864,9 +2864,9 @@ async def detect_scale_endpoint(
         return JSONResponse({"error": "DWG scale detection not yet supported via this endpoint", "scale": None})
 
     if is_pdf:
-        result = load_pdf_page(data, page_num, max_px=1600)
+        result = load_pdf_page(data, page_num, max_px=2400)
     else:
-        result = load_image_file(data, fname, max_px=1600)
+        result = load_image_file(data, fname, max_px=2400)
 
     if result is None:
         return JSONResponse({"error": "Could not load file", "scale": None})
