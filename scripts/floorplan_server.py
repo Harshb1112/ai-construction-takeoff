@@ -2291,7 +2291,7 @@ async def analyze_floorplan(
             # Sanity: agar 1 room hai aur wo pura page hai toh skip
             if len(model_rooms) == 1:
                 r = model_rooms[0]
-                room_area_frac = ((r["bbox"][2]-r["bbox"][0]) * (r["bbox"][3]-r["bbox"][1])) / (img_w * img_h)
+                room_area_frac = (r.get("w", 0) * r.get("h", 0)) / max(img_w * img_h, 1)
                 if room_area_frac > 0.70:
                     print(f"[Pipeline] Model returned 1 giant room ({room_area_frac:.0%} of page) — skipping")
                     model_rooms = None
