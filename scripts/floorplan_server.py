@@ -2945,9 +2945,11 @@ if __name__ == "__main__":
     print(f"  PyMuPDF  : {'OK' if HAS_FITZ   else 'MISSING — pip install PyMuPDF'}")
     print(f"  PyTorch  : {'OK' if HAS_TORCH  else 'MISSING — pip install torch'}")
     print(f"  EasyOCR  : {'OK' if HAS_EASYOCR else 'MISSING — pip install easyocr'}")
-    print(f"  BIMBOSS Model : {_MODEL_CKPT.name if _MODEL_CKPT.exists() else 'NOT FOUND — run: python models/Model_training.py'}")
+    print(f"  BIMBOSS Model : {_MODEL_CKPT.name if _MODEL_CKPT.exists() else 'NOT FOUND'}")
+    print(f"  CubiCasa Model: {'cubicasa_model.pth' if _CUBICASA_CKPT.exists() else 'NOT FOUND — copy from CubiCasa5k-master/floortrans/models/'}")
     print()
 
     _load_model()
+    _load_cubicasa()   # startup pe load karo
 
     uvicorn.run(app, host="0.0.0.0", port=8001, reload=False)
