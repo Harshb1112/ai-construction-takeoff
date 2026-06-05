@@ -271,31 +271,31 @@ def extract_mask_from_markup(markup_rgb: np.ndarray,
         room_roi[room_full > 0] = 1
 
         # ── PARTIAL MARKUP FIX: white enclosed areas bhi room hain ────
-        # Agar sirf kuch rooms colored hain, baaki white rooms bhi detect karo
-        # B&W flood-fill se enclosed white = room (jo color se miss hua)
-        _, white_roi = cv2.threshold(roi_gray, 210, 255, cv2.THRESH_BINARY)
-        # Colored pixels ko white se hata do (woh pehle se marked hain)
-        white_roi[room_roi > 0] = 0
-        # Border flood-fill — bahar ki white ko hatao, andar ki white = room
-        bordered = cv2.copyMakeBorder(white_roi, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=0)
-        bh2, bw2 = bordered.shape
-        flood2 = bordered.copy()
-        fm2 = np.zeros((bh2+2, bw2+2), dtype=np.uint8)
-        for x in range(0, bw2, max(1, bw2//40)):
-            for yy in [0, bh2-1]:
-                if flood2[yy, x] == 255:
-                    cv2.floodFill(flood2, fm2, (x, yy), 128)
-        for y in range(0, bh2, max(1, bh2//40)):
-            for xx in [0, bw2-1]:
-                if flood2[y, xx] == 255:
-                    cv2.floodFill(flood2, fm2, (xx, y), 128)
-        enclosed_white = (flood2[2:2+rh, 2:2+rw] == 255).astype(np.uint8) * 255
-        enclosed_white = cv2.morphologyEx(enclosed_white, cv2.MORPH_OPEN, k3, iterations=1)
-        min_a2 = max(300, int(rh * rw * 0.002))
-        n2, lbl2, stats2, _ = cv2.connectedComponentsWithStats(enclosed_white, connectivity=8)
-        for i in range(1, n2):
-            if stats2[i, cv2.CC_STAT_AREA] >= min_a2:
-                room_roi[lbl2 == i] = 1  # white enclosed area = room
+        # Sirf tab apply karo jab walls clearly visible hain (dark pixels > 3%)
+        # PDF background mein walls nahi hoti → is case mein skip karo
+        wall_pct = (roi_gray < 80).sum() / (rh * rw)
+        if wall_pct > 0.03:   # 3% dark pixels = walls hain → enclosed rooms detect karo
+            _, white_roi = cv2.threshold(roi_gray, 210, 255, cv2.THRESH_BINARY)
+            white_roi[room_roi > 0] = 0  # already marked rooms hata do
+            bordered = cv2.copyMakeBorder(white_roi, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=0)
+            bh2, bw2 = bordered.shape
+            flood2 = bordered.copy()
+            fm2 = np.zeros((bh2+2, bw2+2), dtype=np.uint8)
+            for x in range(0, bw2, max(1, bw2//40)):
+                for yy in [0, bh2-1]:
+                    if flood2[yy, x] == 255:
+                        cv2.floodFill(flood2, fm2, (x, yy), 128)
+            for y in range(0, bh2, max(1, bh2//40)):
+                for xx in [0, bw2-1]:
+                    if flood2[y, xx] == 255:
+                        cv2.floodFill(flood2, fm2, (xx, y), 128)
+            enclosed_white = (flood2[2:2+rh, 2:2+rw] == 255).astype(np.uint8) * 255
+            enclosed_white = cv2.morphologyEx(enclosed_white, cv2.MORPH_OPEN, k3, iterations=1)
+            min_a2 = max(300, int(rh * rw * 0.002))
+            n2, lbl2, stats2, _ = cv2.connectedComponentsWithStats(enclosed_white, connectivity=8)
+            for i in range(1, n2):
+                if stats2[i, cv2.CC_STAT_AREA] >= min_a2:
+                    room_roi[lbl2 == i] = 1
 
     elif gray_pct > 5.0:
         # ── TYPE GRAY: gray shading = rooms ────────────────────────────
