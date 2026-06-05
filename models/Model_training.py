@@ -192,59 +192,133 @@ def _annotation_style(hsv: np.ndarray) -> str:
     return 'color_green'  # fallback
 
 
+def _find_drawing_bbox(img_bgr: np.ndarray):
+    """Find bounding box of actual floor plan drawing, excluding white margins."""
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    non_white = (gray < 240).astype(np.uint8) * 255
+    k = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 30))
+    closed = cv2.morphologyEx(non_white, cv2.MORPH_CLOSE, k, iterations=3)
+    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return 0, 0, w, h
+    largest = max(contours, key=cv2.contourArea)
+    bx, by, bw, bh = cv2.boundingRect(largest)
+    margin = max(5, min(h, w) // 80)
+    bx = max(0, bx - margin)
+    by = max(0, by - margin)
+    bw = min(w - bx, bw + 2 * margin)
+    bh = min(h - by, bh + 2 * margin)
+    return bx, by, bw, bh
+
+
 def extract_mask_from_markup(markup_rgb: np.ndarray,
                               clean_rgb: np.ndarray | None = None,
                               pad_info: PadInfo | None = None) -> np.ndarray:
-    h, w  = markup_rgb.shape[:2]
-    hsv   = cv2.cvtColor(markup_rgb, cv2.COLOR_RGB2HSV)
-    gray  = cv2.cvtColor(markup_rgb, cv2.COLOR_RGB2GRAY)
-    style = _annotation_style(hsv)
+    """
+    Extract segmentation mask from MARKUP image.
+    Handles 3 annotation types automatically:
+      COLOR : colored fill (green/teal) = rooms
+      GRAY  : gray shaded areas = rooms
+      B&W   : enclosed white regions = rooms
+    All masks are restricted to the drawing bounding box only
+    (title blocks, legends, margins are excluded automatically).
+    """
+    h, w = markup_rgb.shape[:2]
+    mask = np.zeros((h, w), dtype=np.uint8)
+    k3   = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
 
-    if style == 'bw_binary':
-        mask = _bw_binary_mask(gray, h, w)
-    elif style == 'color_full':
-        mask = _apply_color_ranges(hsv, STYLE_A_COLORS)
-    else:
-        mask = _color_green_mask(hsv, h, w, clean_rgb)
+    # Convert to BGR for bbox detection
+    markup_bgr = cv2.cvtColor(markup_rgb, cv2.COLOR_RGB2BGR)
+    gray       = cv2.cvtColor(markup_rgb, cv2.COLOR_RGB2GRAY)
+    hsv        = cv2.cvtColor(markup_rgb, cv2.COLOR_RGB2HSV)
+    H_ch, S_ch, V_ch = hsv[:,:,0], hsv[:,:,1], hsv[:,:,2]
 
-    # Force padding border to background
-    if pad_info:
-        y0, x0, nh, nw = pad_info
-        border = np.ones((h, w), dtype=bool)
-        border[y0:y0+nh, x0:x0+nw] = False
-        mask[border] = 0
-    
-    # NEW: Detect and exclude title block / margins / legends
-    # This ensures model doesn't try to learn from text/legends as rooms
-    
-    # Bottom title block (15%)
-    title_h = int(h * 0.15)
-    mask[h - title_h:, :] = 0
-    
-    # Top/Left margins (3%)
-    margin = int(min(h, w) * 0.03)
-    mask[:margin, :] = 0       # Top margin
-    mask[:, :margin] = 0       # Left margin
-    
-    # Right side: Detect if there's a legend/table column (check for high text density)
-    # Most architectural drawings have legends on right 15-20% of page
-    right_zone_width = int(w * 0.18)  # Check rightmost 18%
-    right_zone = gray[:, w - right_zone_width:] if clean_rgb is not None else markup_rgb[:, w - right_zone_width:]
-    
-    # If right zone has high edge density (text/tables), exclude it
-    if clean_rgb is not None:
-        right_gray = cv2.cvtColor(clean_rgb[:, w - right_zone_width:], cv2.COLOR_RGB2GRAY)
+    # ── Step 1: Find drawing bounding box (exclude margins/title/legend) ──
+    bx, by, bw, bh = _find_drawing_bbox(markup_bgr)
+
+    # ROI only
+    roi_gray = gray[by:by+bh, bx:bx+bw]
+    roi_S    = S_ch[by:by+bh, bx:bx+bw]
+    roi_V    = V_ch[by:by+bh, bx:bx+bw]
+    roi_H    = H_ch[by:by+bh, bx:bx+bw]
+    rh, rw   = roi_gray.shape
+
+    # ── Step 2: Detect annotation type ────────────────────────────────────
+    colored_pct = ((roi_S > 50) & (roi_V > 50)).sum() / (rh * rw) * 100
+    gray_pct    = ((roi_gray >= 100) & (roi_gray < 220)).sum() / (rh * rw) * 100
+
+    room_roi = np.zeros((rh, rw), dtype=np.uint8)
+
+    if colored_pct > 1.0:
+        # ── TYPE COLOR: any saturated color = room ─────────────────────
+        scale  = min(1.0, 1024 / max(rh, rw))
+        srw, srh = max(1, int(rw*scale)), max(1, int(rh*scale))
+        sH = cv2.resize(roi_H,    (srw, srh), interpolation=cv2.INTER_NEAREST)
+        sS = cv2.resize(roi_S,    (srw, srh), interpolation=cv2.INTER_NEAREST)
+        sV = cv2.resize(roi_V,    (srw, srh), interpolation=cv2.INTER_NEAREST)
+        color_small = ((sS > 45) & (sV > 45)).astype(np.uint8) * 255
+        k5  = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        k15 = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
+        color_small = cv2.morphologyEx(color_small, cv2.MORPH_CLOSE, k15, iterations=2)
+        color_small = cv2.morphologyEx(color_small, cv2.MORPH_OPEN,  k5,  iterations=1)
+        min_a = max(100, int(srh * srw * 0.005))
+        n, lbl, stats, _ = cv2.connectedComponentsWithStats(color_small, connectivity=8)
+        room_small = np.zeros((srh, srw), dtype=np.uint8)
+        for i in range(1, n):
+            if stats[i, cv2.CC_STAT_AREA] >= min_a:
+                room_small[lbl == i] = 1
+        room_full = cv2.resize(room_small, (rw, rh), interpolation=cv2.INTER_NEAREST)
+        room_roi[room_full > 0] = 1
+
+    elif gray_pct > 5.0:
+        # ── TYPE GRAY: gray shading = rooms ────────────────────────────
+        median_val = float(np.median(roi_gray))
+        if median_val < 128:
+            room_bin = ((roi_gray > 60) & (roi_gray < 220)).astype(np.uint8) * 255
+        else:
+            room_bin = ((roi_gray >= 110) & (roi_gray <= 210)).astype(np.uint8) * 255
+        room_bin = cv2.morphologyEx(room_bin, cv2.MORPH_OPEN,  k3, iterations=2)
+        room_bin = cv2.morphologyEx(room_bin, cv2.MORPH_CLOSE, k3, iterations=2)
+        min_a = max(300, int(rh * rw * 0.003))
+        n, lbl, stats, _ = cv2.connectedComponentsWithStats(room_bin, connectivity=8)
+        for i in range(1, n):
+            if stats[i, cv2.CC_STAT_AREA] >= min_a:
+                room_roi[lbl == i] = 1
+
     else:
-        right_gray = cv2.cvtColor(markup_rgb[:, w - right_zone_width:], cv2.COLOR_RGB2GRAY)
-    
-    edges_right = cv2.Canny(right_gray, 50, 150)
-    edge_density = edges_right.sum() / edges_right.size
-    
-    # If edge density > 0.05 (lots of text/lines), it's likely a legend/table area
-    if edge_density > 0.05:
-        mask[:, w - right_zone_width:] = 0  # Exclude entire right column
-    else:
-        mask[:, w - margin:] = 0  # Just exclude 3% margin
+        # ── TYPE B&W: enclosed white = rooms ────────────────────────────
+        _, white_roi = cv2.threshold(roi_gray, 200, 255, cv2.THRESH_BINARY)
+        bordered = cv2.copyMakeBorder(white_roi, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=0)
+        bh2, bw2 = bordered.shape
+        flood = bordered.copy()
+        fm = np.zeros((bh2+2, bw2+2), dtype=np.uint8)
+        for x in range(0, bw2, max(1, bw2//40)):
+            for yy in [0, bh2-1]:
+                if flood[yy, x] == 255:
+                    cv2.floodFill(flood, fm, (x, yy), 128)
+        for y in range(0, bh2, max(1, bh2//40)):
+            for xx in [0, bw2-1]:
+                if flood[y, xx] == 255:
+                    cv2.floodFill(flood, fm, (xx, y), 128)
+        room_bin = (flood[2:2+rh, 2:2+rw] == 255).astype(np.uint8) * 255
+        room_bin = cv2.morphologyEx(room_bin, cv2.MORPH_OPEN, k3, iterations=1)
+        min_a = max(300, int(rh * rw * 0.001))
+        n, lbl, stats, _ = cv2.connectedComponentsWithStats(room_bin, connectivity=8)
+        for i in range(1, n):
+            if stats[i, cv2.CC_STAT_AREA] >= min_a:
+                room_roi[lbl == i] = 1
+
+    # ── Step 3: Place into full mask (drawing bbox only) ──────────────────
+    mask[by:by+bh, bx:bx+bw][room_roi > 0] = 1  # room
+
+    # Walls = dark lines inside drawing bbox
+    wall_roi = (roi_gray < 80).astype(np.uint8)
+    wall_roi = cv2.dilate(wall_roi, k3, iterations=1)
+    mask[by:by+bh, bx:bx+bw][wall_roi > 0] = 2  # wall
+
+    # Rooms take priority over walls
+    mask[by:by+bh, bx:bx+bw][room_roi > 0] = 1
 
     return mask
 
@@ -1015,7 +1089,7 @@ def main():
         try:
             ckpt = torch.load(str(CKPT), map_location=DEVICE, weights_only=False)
             model.load_state_dict(ckpt.get("model_state", ckpt), strict=False)
-            best_miou = ckpt.get("miou", 0.0)
+            best_miou = ckpt.get("score", ckpt.get("miou", 0.0))
             # Fix #5 — epochs_done tells us how many are complete; remaining = EPOCHS - epochs_done
             epochs_done = ckpt.get("epoch", 0)
             if epochs_done >= EPOCHS:
@@ -1115,7 +1189,8 @@ def main():
         )
         history.append({
             "epoch": epoch, "t_loss": round(t_loss, 6), "v_loss": round(v_loss, 6),
-            "miou": round(miou, 6),
+            "train_loss": round(t_loss, 6), "val_loss": round(v_loss, 6),  # graph compatibility
+            "val_miou": round(miou, 6), "miou": round(miou, 6),
             **{f"{k}_iou": round(v, 6) if not np.isnan(v) else 0.0
                for k, v in v_iou.items() if k != "mean"},
         })
