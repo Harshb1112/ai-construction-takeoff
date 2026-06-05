@@ -263,27 +263,44 @@ def detect_scale_from_image(img_pil) -> tuple[float, str] | None:
     img_arr = np.array(img_pil.convert("RGB"))
     h, w    = img_arr.shape[:2]
 
-    # Pura page + upscaled version — scale text chhota hota hai
-    # Upscale 2x for better OCR on small text
-    h2, w2 = h * 2, w * 2
-    img_up = cv2.resize(img_arr, (w2, h2), interpolation=cv2.INTER_CUBIC) if HAS_CV2 else img_arr
+    reader = _get_easyocr()
 
-    # Preprocessed: grayscale + contrast boost for small text
-    if HAS_CV2:
-        gray   = cv2.cvtColor(img_up, cv2.COLOR_RGB2GRAY)
-        _, img_thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        img_pre = cv2.cvtColor(img_thresh, cv2.COLOR_GRAY2RGB)
-    else:
-        img_pre = img_up
+    # ── Step 1: SCALE keyword dhundho (detail=1 for bounding boxes) ───────────
+    scale_crop = None
+    if reader is not None and HAS_CV2:
+        try:
+            results_detail = reader.readtext(img_arr, detail=1)
+            for (bbox, text_found, conf) in results_detail:
+                if re.search(r'\bscale\b', text_found, re.IGNORECASE) and conf > 0.3:
+                    # SCALE word ka bbox mila — uske neeche ka area crop karo
+                    xs = [p[0] for p in bbox]
+                    ys = [p[1] for p in bbox]
+                    x0s, y0s = int(min(xs)), int(min(ys))
+                    x1s, y1s = int(max(xs)), int(max(ys))
+                    pad_x = max(300, (x1s - x0s) * 3)
+                    pad_y = max(120, (y1s - y0s) * 4)
+                    cx0 = max(0, x0s - 20)
+                    cy0 = max(0, y0s - 10)
+                    cx1 = min(w, x1s + pad_x)
+                    cy1 = min(h, y1s + pad_y)
+                    crop = img_arr[cy0:cy1, cx0:cx1]
+                    # 4x upscale crop for better OCR
+                    crop_up = cv2.resize(crop, (crop.shape[1]*4, crop.shape[0]*4), interpolation=cv2.INTER_CUBIC)
+                    scale_crop = crop_up
+                    print(f"[Scale] Found SCALE keyword at ({x0s},{y0s}) — cropping region for OCR")
+                    break
+        except Exception as e:
+            print(f"[Scale] SCALE keyword search error: {e}")
 
-    regions = [
-        ("full-page",          img_arr),    # original
-        ("full-page-upscaled", img_up),     # 2x upscale
-        ("full-page-thresh",   img_pre),    # binarized
-    ]
+    # ── Step 2: Regions to try ────────────────────────────────────────────────
+    regions = []
+    if scale_crop is not None:
+        regions.append(("scale-crop", scale_crop))   # SCALE area — most accurate
+
+    # Full page fallback
+    regions.append(("full-page", img_arr))
 
     # EasyOCR - try each region
-    reader = _get_easyocr()
     if reader is not None:
         for region_name, region_img in regions:
             try:
