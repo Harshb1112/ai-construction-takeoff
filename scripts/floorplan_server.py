@@ -1728,16 +1728,30 @@ def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = No
         
         room_frac = (pred_map == 1).sum() / pred_map.size
         if room_frac > 0.75:
-            # Over-predicting — wall pixels se rooms separate karo
-            print(f"[Model] room={room_frac:.0%} > 75% — using wall-subtracted argmax")
-            wall_mask  = (pred_map == 2)
-            bg_mask    = (pred_map == 0)
-            # Room = not wall, not background
-            room_mask  = ((pred_map == 1) & ~wall_mask & ~bg_mask).astype(np.uint8) * 255
-            # Erode to break thin connections between rooms
-            k_erode = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-            room_mask = cv2.erode(room_mask, k_erode, iterations=2)
-            room_mask = cv2.dilate(room_mask, k_erode, iterations=1)
+            # Over-predicting — image se directly walls detect karo
+            print(f"[Model] room={room_frac:.0%} > 75% — using image-based wall separation")
+            # Direct image se dark pixels = walls
+            img_gray  = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+            img_rs    = cv2.resize(img_gray, (pred_map.shape[1], pred_map.shape[0]))
+            wall_img  = (img_rs < 80).astype(np.uint8) * 255
+            k_dil     = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            wall_img  = cv2.dilate(wall_img, k_dil, iterations=2)
+            # White areas enclosed by image walls = rooms
+            white_img = (img_rs > 200).astype(np.uint8) * 255
+            white_img[wall_img > 0] = 0
+            # Border flood fill
+            bordered  = cv2.copyMakeBorder(white_img, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=0)
+            bh2, bw2  = bordered.shape
+            flood2    = bordered.copy()
+            fm2       = np.zeros((bh2+2, bw2+2), dtype=np.uint8)
+            for x in range(0, bw2, max(1, bw2//60)):
+                for yy in [0, bh2-1]:
+                    if flood2[yy, x] == 255: cv2.floodFill(flood2, fm2, (x, yy), 128)
+            for y in range(0, bh2, max(1, bh2//60)):
+                for xx in [0, bw2-1]:
+                    if flood2[y, xx] == 255: cv2.floodFill(flood2, fm2, (xx, y), 128)
+            rh2, rw2  = pred_map.shape
+            room_mask = (flood2[2:2+rh2, 2:2+rw2] == 255).astype(np.uint8) * 255
         else:
             print(f"[Model] room coverage={room_frac:.1%} (using argmax prediction)")
     else:
@@ -1787,14 +1801,14 @@ def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = No
         y1 = clip_y1
         
         bw_, bh_ = x1-x0, y1-y0
-        if bw_ < 10 or bh_ < 10:  # LOWERED from 15 to allow smaller rooms
+        if bw_ < 10 or bh_ < 10:
             continue
-        # Skip border components but be more lenient
-        if x0 < 2 or y0 < 2 or x1 > w-2 or y1 > h-2:
-            continue  # skip border = background
+        # Skip only if touching ALL 4 borders (background blob)
+        if x0 < 2 and y0 < 2 and x1 > w-2 and y1 > h-2:
+            continue
 
         area_sqm = round(px * (mpp ** 2), 2) if mpp > 0 else round(px / 1000.0, 2)
-        if mpp > 0 and (area_sqm < 0.5 or area_sqm > 3000):
+        if mpp > 0 and (area_sqm < 0.5 or area_sqm > 5000):
             continue
 
         cnts, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
