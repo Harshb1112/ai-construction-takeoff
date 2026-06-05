@@ -129,28 +129,20 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _parse_scale_notation(text: str) -> tuple[float, str] | None:
-    “””
-    Parse any architectural scale notation → (ratio, label).
-    ratio = N means 1 unit on paper = N units in reality.
-
-    Handles:
-      Metric:   1:100   1:50   1:200   1/100
-      Imperial: 1/8”=1’-0”   1/4”=1’-0”   1/16”=1’-0”
-      Indian:   1cm=1m   1mm=1m   NTS
-    “””
+    # Parse architectural scale notation -> (ratio, label)
+    # ratio = N means 1 unit on paper = N units in reality
     t = text.strip()
 
     # Metric ratio: 1:N or 1/N
-    m = re.search(r’(?:scale\s*)?1\s*[:/]\s*(\d+)’, t, re.IGNORECASE)
+    m = re.search(r'(?:scale\s*)?1\s*[:/]\s*(\d+)', t, re.IGNORECASE)
     if m:
         ratio = int(m.group(1))
         if 10 <= ratio <= 5000:
-            return ratio, f”1:{ratio}”
+            return ratio, '1:' + str(ratio)
 
-    # Imperial: N/D” = 1’-0”  (flexible — handles OCR noise like 1/8”=1’-0”, 1/8” = 1’-0”)
-    # Allows any quote-like char, dash, space variations from OCR
+    # Imperial: N/D" = 1'-0"  flexible - handles OCR noise
     m = re.search(
-        r’(\d+)\s*/\s*(\d+)\s*[“\’‘’“”]?\s*[=\-]\s*1\s*[\’\-‘’]’,
+        r'(\d+)\s*/\s*(\d+)\s*["\']?\s*[=\-]\s*1\s*[\'\-]',
         t, re.IGNORECASE
     )
     if m:
@@ -158,37 +150,37 @@ def _parse_scale_notation(text: str) -> tuple[float, str] | None:
         if denom > 0:
             paper_inches = numer / denom
             ratio = round(12.0 / paper_inches)
-            return ratio, f’{numer}/{denom}”=1\’-0”’
+            return ratio, str(numer) + '/' + str(denom) + '"=1\'-0"'
 
-    # Imperial loose: “1/8” anywhere near “1’” or “1-0” — OCR often drops symbols
-    m = re.search(r’(\d+)\s*/\s*(\d+)\s*[“\’]?\s*=?\s*1\s*[\’`\-]?\s*0\s*[“\’]?’, t, re.IGNORECASE)
+    # Imperial loose: 1/8 near 1-0 - OCR often drops symbols
+    m = re.search(r'(\d+)\s*/\s*(\d+)\s*["\']?\s*=?\s*1\s*[\'\-]?\s*0\s*["\']?', t, re.IGNORECASE)
     if m:
         numer, denom = int(m.group(1)), int(m.group(2))
-        if denom > 0 and numer < denom:   # sanity: 1/8 not 8/1
+        if denom > 0 and numer < denom:
             paper_inches = numer / denom
             ratio = round(12.0 / paper_inches)
-            return ratio, f’{numer}/{denom}”=1\’-0”’
+            return ratio, str(numer) + '/' + str(denom) + '"=1\'-0"'
 
-    # Imperial: N/D”=1ft or N/D”=1’
-    m = re.search(r’(\d+)\s*/\s*(\d+)\s*[“\’”]\s*=\s*1\s*ft’, t, re.IGNORECASE)
+    # Imperial: N/D"=1ft
+    m = re.search(r'(\d+)\s*/\s*(\d+)\s*["\']?\s*=\s*1\s*ft', t, re.IGNORECASE)
     if m:
         numer, denom = int(m.group(1)), int(m.group(2))
         if denom > 0:
             paper_inches = numer / denom
             ratio = round(12.0 / paper_inches)
-            return ratio, f’{numer}/{denom}”=1ft’
+            return ratio, str(numer) + '/' + str(denom) + '"=1ft'
 
-    # mm = m (Indian standard)
-    m = re.search(r’(\d+)\s*mm\s*=\s*(\d+)\s*m’, t, re.IGNORECASE)
+    # mm=m (Indian standard)
+    m = re.search(r'(\d+)\s*mm\s*=\s*(\d+)\s*m', t, re.IGNORECASE)
     if m:
         ratio = int(m.group(2)) * 1000 // int(m.group(1))
-        return ratio, f’{m.group(1)}mm={m.group(2)}m’
+        return ratio, m.group(1) + 'mm=' + m.group(2) + 'm'
 
-    # cm = m
-    m = re.search(r’(\d+)\s*cm\s*=\s*(\d+)\s*m’, t, re.IGNORECASE)
+    # cm=m
+    m = re.search(r'(\d+)\s*cm\s*=\s*(\d+)\s*m', t, re.IGNORECASE)
     if m:
         ratio = int(m.group(2)) * 100 // int(m.group(1))
-        return ratio, f’{m.group(1)}cm={m.group(2)}m’
+        return ratio, m.group(1) + 'cm=' + m.group(2) + 'm'
 
     return None
 
