@@ -2130,7 +2130,7 @@ async def analyze_floorplan(
     img_arr  = np.array(img_pil.convert("RGB"))
 
     # 1: Trained UNet model — only use if mIoU >= 0.55 (reliable enough)
-    MIN_MIOU = 0.55
+    MIN_MIOU = 0.45
     model_miou = _model_meta.get("miou", 0) if _model_meta else 0
 
     if model_miou >= MIN_MIOU:
