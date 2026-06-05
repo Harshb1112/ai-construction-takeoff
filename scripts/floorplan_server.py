@@ -32,7 +32,9 @@ Run:
 """
 
 from __future__ import annotations
-import io, re, json, math, time, os, sys
+import io, re, json, math, time, os, sys, warnings
+warnings.filterwarnings("ignore", message=".*pin_memory.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="torch")
 from pathlib import Path
 from typing import Optional, Any
 
@@ -261,9 +263,23 @@ def detect_scale_from_image(img_pil) -> tuple[float, str] | None:
     img_arr = np.array(img_pil.convert("RGB"))
     h, w    = img_arr.shape[:2]
 
-    # Pura page pehle — scale kahin bhi ho sakta hai
+    # Pura page + upscaled version — scale text chhota hota hai
+    # Upscale 2x for better OCR on small text
+    h2, w2 = h * 2, w * 2
+    img_up = cv2.resize(img_arr, (w2, h2), interpolation=cv2.INTER_CUBIC) if HAS_CV2 else img_arr
+
+    # Preprocessed: grayscale + contrast boost for small text
+    if HAS_CV2:
+        gray   = cv2.cvtColor(img_up, cv2.COLOR_RGB2GRAY)
+        _, img_thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        img_pre = cv2.cvtColor(img_thresh, cv2.COLOR_GRAY2RGB)
+    else:
+        img_pre = img_up
+
     regions = [
-        ("full-page", img_arr),
+        ("full-page",          img_arr),    # original
+        ("full-page-upscaled", img_up),     # 2x upscale
+        ("full-page-thresh",   img_pre),    # binarized
     ]
 
     # EasyOCR - try each region
@@ -1717,9 +1733,9 @@ def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = No
     room_mask = cv2.morphologyEx(room_mask, cv2.MORPH_CLOSE, k_open, iterations=2)
 
     n_lbl, labeled = cv2.connectedComponents(room_mask, connectivity=8)
-    min_px = max(100, int(h * w * 0.001))   # aur chhote rooms bhi detect ho
-    max_px = int(h * w * 0.50)
-    print(f"[Model] {n_lbl-1} components found, min_px={min_px}")
+    min_px = max(100, int(h * w * 0.0005))
+    max_px = int(h * w * 0.90)   # almost whole image allowed
+    print(f"[Model] {n_lbl-1} components found, min_px={min_px} max_px={max_px}")
 
     rooms = []
     for lbl in range(1, n_lbl):
