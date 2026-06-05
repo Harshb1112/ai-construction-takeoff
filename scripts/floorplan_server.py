@@ -241,7 +241,7 @@ def _get_easyocr():
 def detect_scale_from_image(img_pil) -> tuple[float, str] | None:
     """
     OCR on rasterized image to find scale notation.
-    Searches title block (bottom 30% of image).
+    Searches ENTIRE image (title blocks can be anywhere in construction drawings).
     Returns (ratio, label) or None.
     """
     if not HAS_PIL:
@@ -249,33 +249,46 @@ def detect_scale_from_image(img_pil) -> tuple[float, str] | None:
 
     img_arr = np.array(img_pil.convert("RGB"))
     h, w    = img_arr.shape[:2]
-    title_block = img_arr[int(h * 0.65):, :]   # bottom 35%
+    
+    # Search multiple regions: bottom 35%, top 20%, and right 30%
+    regions = [
+        ("bottom", img_arr[int(h * 0.65):, :]),          # bottom 35% (most common)
+        ("top",    img_arr[:int(h * 0.20), :]),          # top 20% (some drawings)
+        ("right",  img_arr[:, int(w * 0.70):]),          # right 30% (vertical title blocks)
+    ]
 
-    # EasyOCR
+    # EasyOCR - try each region
     reader = _get_easyocr()
     if reader is not None:
-        try:
-            results = reader.readtext(title_block, detail=0, paragraph=True)
-            text = " ".join(results)
-            r = _parse_scale_notation(text)
-            if r:
-                print(f"[Scale] EasyOCR: {r[1]}")
-                return r
-        except Exception:
-            pass
+        for region_name, region_img in regions:
+            try:
+                results = reader.readtext(region_img, detail=0, paragraph=True)
+                text = " ".join(results)
+                print(f"[Scale] EasyOCR ({region_name}) read: {text[:200]}")  # Log first 200 chars
+                r = _parse_scale_notation(text)
+                if r:
+                    print(f"[Scale] EasyOCR ({region_name}): {r[1]}")
+                    return r
+            except Exception as e:
+                print(f"[Scale] EasyOCR ({region_name}) error: {e}")
+                pass
 
-    # Tesseract
+    # Tesseract - try each region
     if HAS_TESSERACT:
-        try:
-            tb_pil = PILImage.fromarray(title_block)
-            text   = pytesseract.image_to_string(tb_pil, config="--psm 6")
-            r = _parse_scale_notation(text)
-            if r:
-                print(f"[Scale] Tesseract: {r[1]}")
-                return r
-        except Exception:
-            pass
+        for region_name, region_img in regions:
+            try:
+                region_pil = PILImage.fromarray(region_img)
+                text = pytesseract.image_to_string(region_pil, config="--psm 6")
+                print(f"[Scale] Tesseract ({region_name}) read: {text[:200]}")  # Log first 200 chars
+                r = _parse_scale_notation(text)
+                if r:
+                    print(f"[Scale] Tesseract ({region_name}): {r[1]}")
+                    return r
+            except Exception as e:
+                print(f"[Scale] Tesseract ({region_name}) error: {e}")
+                pass
 
+    print("[Scale] No scale notation found in any region")
     return None
 
 
@@ -881,10 +894,10 @@ def _load_model():
                 print(f"[Model] Using ResNetUNet ({arch})")
             except Exception as e:
                 print(f"[Model] ResNetUNet import failed: {e} — falling back to legacy UNet")
-                feats = tuple(ckpt.get("feats", (64, 128, 256, 512)))
+                feats = _detect_feats(state, ckpt)
                 model = _build_unet(feats=feats, n_cls=n_cls)
         else:
-            feats = tuple(ckpt.get("feats", (64, 128, 256, 512)))
+            feats = _detect_feats(state, ckpt)
             model = _build_unet(feats=feats, n_cls=n_cls)
 
         missing, unexpected = model.load_state_dict(state, strict=False)
@@ -903,6 +916,20 @@ def _load_model():
         print(f"[Model] Load error: {e}")
         import traceback; traceback.print_exc()
         return None
+
+
+def _detect_feats(state: dict, ckpt: dict) -> tuple:
+    """Checkpoint ke head.weight se actual feature channels detect karo."""
+    # Pehle checkpoint mein saved feats check karo
+    if "feats" in ckpt:
+        return tuple(ckpt["feats"])
+    # head.weight shape = (n_cls, feats[0], 1, 1) — feats[0] se scale karo
+    head_key = next((k for k in state if "head.weight" in k), None)
+    if head_key:
+        head_ch = int(state[head_key].shape[1])
+        # head_ch = feats[0], baaki double hote hain
+        return (head_ch, head_ch*2, head_ch*4, head_ch*8)
+    return (64, 128, 256, 512)  # fallback
 
 
 def _build_unet(feats=(64,128,256,512), n_cls=3):
@@ -1660,13 +1687,25 @@ def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = No
         x0, x1 = int(cols_nz.min()), int(cols_nz.max())
         
         # CRITICAL: Skip components outside floor plan bounds (construction notes/schedules)
-        cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
-        if cx > fp_x_max or cy > fp_y_max:
-            continue  # Component is in notes/schedule area - NOT a room
+        # Check if ANY part of the bounding box is outside the floor plan area
+        if x0 > fp_x_max or y0 > fp_y_max:
+            continue  # Component starts outside floor plan — NOT a room
         
-        # Also skip if majority of component is outside bounds
-        if x1 > fp_x_max or y1 > fp_y_max:
-            continue
+        # Skip if more than 20% of the component extends outside bounds
+        clip_x1 = min(x1, fp_x_max)
+        clip_y1 = min(y1, fp_y_max)
+        clipped_w = clip_x1 - x0
+        clipped_h = clip_y1 - y0
+        orig_w = x1 - x0
+        orig_h = y1 - y0
+        clipped_area = clipped_w * clipped_h
+        orig_area = orig_w * orig_h
+        if orig_area > 0 and clipped_area / orig_area < 0.80:
+            continue  # More than 20% is outside bounds — likely notes/schedule
+        
+        # Clip the component to floor plan bounds
+        x1 = clip_x1
+        y1 = clip_y1
         
         bw_, bh_ = x1-x0, y1-y0
         if bw_ < 10 or bh_ < 10:  # LOWERED from 15 to allow smaller rooms
@@ -1683,11 +1722,13 @@ def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = No
         if not cnts:
             continue
         cnt    = max(cnts, key=cv2.contourArea)
+        
+        # Clip polygon points to floor plan bounds
         arc    = cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, 0.010*arc, True)
         if len(approx) > 30:
             approx = cv2.approxPolyDP(cnt, 0.020*arc, True)
-        poly = [[int(p[0][0]), int(p[0][1])] for p in approx]
+        poly = [[int(min(p[0][0], fp_x_max)), int(min(p[0][1], fp_y_max))] for p in approx]
         if len(poly) < 3:
             poly = [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]
 
@@ -1989,10 +2030,10 @@ async def analyze_floorplan(
         pipeline = "model"
         print(f"[Pipeline] Model ONLY: {len(rooms)} rooms")
     else:
-        # Model failed — use OpenCV as fallback (TextGuided disabled — creates fake background rooms)
-        print("[Pipeline] Model produced no results — using OpenCV fallback")
-        rooms    = pipeline_opencv(img_pil, mpp)
-        pipeline = "opencv_fallback"
+        # Model produced no results — NO FALLBACK, return empty
+        print("[Pipeline] Model produced no results — returning empty (fallbacks disabled)")
+        rooms    = []
+        pipeline = "model_empty"
 
     # DISABLED: TextGuided creates fake rooms from background areas
     # # 2: Text-guided flood fill — MERGE on top of model (adds named rooms model missed)
@@ -2195,6 +2236,7 @@ async def analyze_floorplan(
         "imageWidth":       int(img_w),
         "imageHeight":      int(img_h),
         "metersPerPixel":   round(float(mpp), 8),
+        "mpp_px":           round(float(mpp), 8),  # Frontend expects this field name
         "pipeline":         pipeline,
         "roomCount":        len(rooms),
         "doorCount":        len(doors),
