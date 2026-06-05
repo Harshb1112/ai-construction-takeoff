@@ -261,13 +261,9 @@ def detect_scale_from_image(img_pil) -> tuple[float, str] | None:
     img_arr = np.array(img_pil.convert("RGB"))
     h, w    = img_arr.shape[:2]
 
-    # Search multiple regions — title block can be anywhere
+    # Pura page pehle — scale kahin bhi ho sakta hai
     regions = [
-        ("bottom-right", img_arr[int(h*0.60):, int(w*0.55):]),  # bottom-right (most common US)
-        ("bottom",       img_arr[int(h*0.70):, :]),              # full bottom strip
-        ("top",          img_arr[:int(h*0.20), :]),              # top strip
-        ("right",        img_arr[:, int(w*0.70):]),              # right column
-        ("bottom-left",  img_arr[int(h*0.60):, :int(w*0.45)]),  # bottom-left
+        ("full-page", img_arr),
     ]
 
     # EasyOCR - try each region
