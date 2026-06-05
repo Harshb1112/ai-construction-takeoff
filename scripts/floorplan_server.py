@@ -1714,8 +1714,8 @@ def pipeline_model(img_pil, mpp: float, fp_x_max: int = None, fp_y_max: int = No
         if x0 < 2 or y0 < 2 or x1 > w-2 or y1 > h-2:
             continue  # skip border = background
 
-        area_sqm = round(px * (mpp ** 2), 2)
-        if area_sqm < 0.5 or area_sqm > 3000:  # LOWERED min from 1.5 to 0.5, increased max to 3000
+        area_sqm = round(px * (mpp ** 2), 2) if mpp > 0 else round(px / 1000.0, 2)
+        if mpp > 0 and (area_sqm < 0.5 or area_sqm > 3000):
             continue
 
         cnts, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
