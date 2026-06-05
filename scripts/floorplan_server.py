@@ -924,16 +924,17 @@ def _load_cubicasa():
     if not HAS_TORCH or not _CUBICASA_CKPT.exists():
         return None
     try:
+        _dev = "cuda" if torch.cuda.is_available() else "cpu"
         import sys as _sys
         _sys.path.insert(0, str(_ROOT))
         from floortrans.models.model_1427 import model_1427
-        ckpt = torch.load(str(_CUBICASA_CKPT), map_location=DEVICE, weights_only=False)
+        ckpt = torch.load(str(_CUBICASA_CKPT), map_location=_dev, weights_only=False)
         model_1427.load_state_dict(ckpt)
         model_1427.eval()
-        model_1427.to(DEVICE)
+        model_1427.to(_dev)
         _cubicasa_model = model_1427
         n = sum(p.numel() for p in model_1427.parameters()) / 1e6
-        print(f"[CubiCasa] Loaded cubicasa_model.pth  params={n:.1f}M  device={DEVICE}")
+        print(f"[CubiCasa] Loaded cubicasa_model.pth  params={n:.1f}M  device={_dev}")
         return _cubicasa_model
     except Exception as e:
         print(f"[CubiCasa] Load failed: {e}")
@@ -957,7 +958,8 @@ def run_cubicasa_inference(img_rgb: np.ndarray) -> np.ndarray | None:
         mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
         std  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
         inp  = ((img_256.astype(np.float32) / 255.0) - mean) / std
-        inp  = torch.from_numpy(inp.transpose(2, 0, 1)).unsqueeze(0).float().to(DEVICE)
+        _dev = next(model.parameters()).device
+        inp  = torch.from_numpy(inp.transpose(2, 0, 1)).unsqueeze(0).float().to(_dev)
 
         with torch.no_grad():
             out = model(inp)  # (1, 51, H, W)
