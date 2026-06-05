@@ -2112,16 +2112,30 @@ async def analyze_floorplan(
     pipeline = "none"
     img_arr  = np.array(img_pil.convert("RGB"))
 
-    # 1: Trained UNet model — PRIMARY and ONLY detection method
-    # Pass bounds to exclude construction notes/schedule areas
-    model_rooms = pipeline_model(img_pil, mpp, fp_x_max, fp_y_max)
-    if model_rooms and len(model_rooms) >= 1:
-        rooms    = model_rooms
-        pipeline = "model"
-        print(f"[Pipeline] Model ONLY: {len(rooms)} rooms")
+    # 1: Trained UNet model — only use if mIoU >= 0.55 (reliable enough)
+    MIN_MIOU = 0.55
+    model_miou = _model_meta.get("miou", 0) if _model_meta else 0
+
+    if model_miou >= MIN_MIOU:
+        model_rooms = pipeline_model(img_pil, mpp, fp_x_max, fp_y_max)
+        if model_rooms and len(model_rooms) >= 1:
+            # Sanity: agar 1 room hai aur wo pura page hai toh skip
+            if len(model_rooms) == 1:
+                r = model_rooms[0]
+                room_area_frac = ((r["bbox"][2]-r["bbox"][0]) * (r["bbox"][3]-r["bbox"][1])) / (img_w * img_h)
+                if room_area_frac > 0.70:
+                    print(f"[Pipeline] Model returned 1 giant room ({room_area_frac:.0%} of page) — skipping")
+                    model_rooms = None
+            if model_rooms:
+                rooms    = model_rooms
+                pipeline = "model"
+                print(f"[Pipeline] Model (mIoU={model_miou:.2f}): {len(rooms)} rooms")
     else:
-        # Model produced no results — NO FALLBACK, return empty
-        print("[Pipeline] Model produced no results — returning empty (fallbacks disabled)")
+        print(f"[Pipeline] Model mIoU={model_miou:.2f} < {MIN_MIOU} — model skip (training incomplete)")
+        model_rooms = None
+
+    if not rooms:
+        print("[Pipeline] Model skip/empty — returning empty")
         rooms    = []
         pipeline = "model_empty"
 
